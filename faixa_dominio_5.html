@@ -1,0 +1,1461 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Gestão da Faixa de Domínio</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f0ede8;
+    --surface: #faf9f7;
+    --surface2: #f4f2ee;
+    --border: #e2ddd6;
+    --border2: #ccc8c0;
+    --text: #1a1714;
+    --text2: #6b6560;
+    --text3: #9e9891;
+    --accent: #1d4e3a;
+    --accent2: #2d6e52;
+    --accent-light: #e8f2ed;
+    --danger: #b83232;
+    --danger-bg: #fdf0f0;
+    --warning: #9a6400;
+    --warning-bg: #fdf6e3;
+    --info: #1a4a7a;
+    --info-bg: #edf4fd;
+    --success: #1d6b3a;
+    --success-bg: #edf7f1;
+    --muted-bg: #f0ede8;
+    --radius: 10px;
+    --radius-lg: 16px;
+    --shadow: 0 1px 4px rgba(0,0,0,0.07);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.1);
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* Layout */
+  .sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0;
+    width: 220px; background: var(--accent);
+    display: flex; flex-direction: column;
+    padding: 0; z-index: 100;
+  }
+  .sidebar-logo {
+    padding: 24px 20px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .sidebar-logo .logo-icon {
+    width: 36px; height: 36px; background: rgba(255,255,255,0.15);
+    border-radius: 8px; display: flex; align-items: center; justify-content: center;
+    margin-bottom: 10px;
+  }
+  .sidebar-logo .logo-icon svg { width: 20px; height: 20px; stroke: white; fill: none; stroke-width: 2; }
+  .sidebar-logo h1 { font-size: 13px; font-weight: 600; color: white; line-height: 1.3; }
+  .sidebar-logo p { font-size: 11px; color: rgba(255,255,255,0.55); margin-top: 2px; }
+
+  .sidebar-nav { flex: 1; padding: 12px 0; }
+  .nav-label { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: rgba(255,255,255,0.4); padding: 8px 20px 4px; text-transform: uppercase; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 20px; cursor: pointer;
+    color: rgba(255,255,255,0.7); font-size: 13px; font-weight: 400;
+    transition: all 0.15s; border-left: 2px solid transparent;
+    text-decoration: none;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.08); color: white; }
+  .nav-item.active { background: rgba(255,255,255,0.12); color: white; border-left-color: rgba(255,255,255,0.8); font-weight: 500; }
+  .nav-item svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; flex-shrink: 0; }
+
+  .main { margin-left: 220px; min-height: 100vh; }
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(240,237,232,0.92); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 28px; height: 56px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .topbar-title { font-size: 15px; font-weight: 600; color: var(--text); }
+  .topbar-right { display: flex; align-items: center; gap: 10px; }
+
+  .content { padding: 28px; }
+
+  /* Pages */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* Cards de métrica */
+  .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+  .metric-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 18px 20px;
+    position: relative; overflow: hidden;
+    transition: box-shadow 0.2s;
+  }
+  .metric-card:hover { box-shadow: var(--shadow-md); }
+  .metric-card .label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text3); margin-bottom: 8px; }
+  .metric-card .value { font-size: 28px; font-weight: 600; font-family: 'DM Mono', monospace; color: var(--text); line-height: 1; }
+  .metric-card .sub { font-size: 12px; color: var(--text3); margin-top: 6px; }
+  .metric-card .accent-bar {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 3px;
+  }
+  .metric-card.danger .value { color: var(--danger); }
+  .metric-card.warning .value { color: var(--warning); }
+  .metric-card.success .value { color: var(--success); }
+  .metric-card.accent .value { color: var(--accent); }
+
+  /* Charts grid */
+  .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 24px; }
+  .chart-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 20px;
+  }
+  .chart-card.full { grid-column: 1 / -1; }
+  .chart-card h3 { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .chart-card .chart-sub { font-size: 11px; color: var(--text3); margin-bottom: 16px; }
+  .chart-wrap { position: relative; }
+
+  /* Table section */
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+  .section-title { font-size: 15px; font-weight: 600; color: var(--text); }
+
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .search-box {
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border2); border-radius: var(--radius);
+    padding: 7px 12px; background: var(--surface);
+  }
+  .search-box svg { width: 14px; height: 14px; stroke: var(--text3); fill: none; stroke-width: 2; }
+  .search-box input { border: none; outline: none; background: transparent; font-family: inherit; font-size: 13px; color: var(--text); width: 180px; }
+  .search-box input::placeholder { color: var(--text3); }
+
+  select.filter {
+    border: 1px solid var(--border2); border-radius: var(--radius);
+    padding: 7px 10px; background: var(--surface);
+    font-family: inherit; font-size: 13px; color: var(--text); outline: none; cursor: pointer;
+  }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border-radius: var(--radius);
+    font-family: inherit; font-size: 13px; font-weight: 500;
+    cursor: pointer; transition: all 0.15s; border: none;
+  }
+  .btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: var(--accent2); }
+  .btn-ghost { background: transparent; border: 1px solid var(--border2); color: var(--text2); }
+  .btn-ghost:hover { background: var(--surface2); }
+  .btn-danger { background: var(--danger-bg); color: var(--danger); border: 1px solid #f0c0c0; }
+  .btn-danger:hover { background: #fae0e0; }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  thead tr { background: var(--surface2); }
+  th {
+    padding: 11px 16px; text-align: left;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--text3);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  td { padding: 12px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--surface2); }
+  .td-processo { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; color: var(--accent); }
+  .td-solicitacao { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text2); }
+
+  /* Badges */
+  .badge {
+    display: inline-flex; align-items: center;
+    padding: 3px 10px; border-radius: 20px;
+    font-size: 11px; font-weight: 600; white-space: nowrap;
+  }
+  .badge-analise { background: var(--info-bg); color: var(--info); }
+  .badge-aprovado { background: var(--success-bg); color: var(--success); }
+  .badge-pendente { background: var(--warning-bg); color: var(--warning); }
+  .badge-indeferido { background: var(--danger-bg); color: var(--danger); }
+  .badge-concluido { background: var(--muted-bg); color: var(--text2); }
+
+  .prazo-ok { color: var(--text2); font-size: 13px; }
+  .prazo-warn { color: var(--warning); font-size: 13px; font-weight: 500; }
+  .prazo-late { color: var(--danger); font-size: 13px; font-weight: 500; }
+
+  .actions { display: flex; gap: 4px; justify-content: flex-end; }
+  .action-btn {
+    width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+    border-radius: 7px; border: none; cursor: pointer; background: transparent; transition: all 0.15s;
+  }
+  .action-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+  .action-btn.edit { color: var(--info); }
+  .action-btn.edit:hover { background: var(--info-bg); }
+  .action-btn.del { color: var(--danger); }
+  .action-btn.del:hover { background: var(--danger-bg); }
+
+  .empty-state {
+    text-align: center; padding: 48px 20px; color: var(--text3);
+  }
+  .empty-state svg { width: 40px; height: 40px; stroke: var(--text3); fill: none; stroke-width: 1.5; margin: 0 auto 12px; display: block; }
+  .empty-state p { font-size: 14px; }
+
+  /* Modal */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(20,16,12,0.45); z-index: 200;
+    align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface); border-radius: var(--radius-lg);
+    border: 1px solid var(--border); padding: 24px 28px;
+    width: 780px; max-width: 96vw; max-height: 96vh; overflow-y: auto;
+    box-shadow: var(--shadow-md);
+    animation: slideUp 0.2s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+  .modal-header h2 { font-size: 16px; font-weight: 600; color: var(--text); }
+  .modal-close { width: 30px; height: 30px; border: none; background: var(--surface2); border-radius: 7px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text2); }
+  .modal-close:hover { background: var(--border); }
+  .modal-close svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group.full { grid-column: 1 / -1; }
+  .form-group label { font-size: 12px; font-weight: 600; color: var(--text2); letter-spacing: 0.04em; }
+  .form-group input, .form-group select, .form-group textarea {
+    padding: 9px 12px; border: 1px solid var(--border2); border-radius: var(--radius);
+    font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+    outline: none; transition: border-color 0.15s;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--accent); }
+  .form-group textarea { resize: vertical; min-height: 70px; }
+
+  .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
+
+  /* Alerts */
+  .alert-strip {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px; border-radius: var(--radius);
+    font-size: 13px; margin-bottom: 16px;
+  }
+  .alert-strip svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; flex-shrink: 0; }
+  .alert-danger { background: var(--danger-bg); color: var(--danger); border: 1px solid #f0c0c0; }
+  .alert-warning { background: var(--warning-bg); color: var(--warning); border: 1px solid #f0d88a; }
+
+  /* Footer table info */
+  .table-footer { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; font-size: 12px; color: var(--text3); border-top: 1px solid var(--border); background: var(--surface2); }
+
+  /* Donut legend */
+  .donut-legend { display: flex; flex-direction: column; gap: 6px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+    .charts-grid { grid-template-columns: 1fr; }
+    .charts-grid .chart-card.full { grid-column: 1; }
+    .sidebar { width: 60px; }
+    .sidebar-logo h1, .sidebar-logo p, .nav-item span, .nav-label { display: none; }
+    .nav-item { justify-content: center; padding: 12px; }
+    .main { margin-left: 60px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h12"/><circle cx="19" cy="18" r="2"/></svg>
+    </div>
+    <h1>Faixa de Domínio</h1>
+    <p>Sistema de Gestão</p>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">Menu</div>
+    <a class="nav-item active" onclick="showPage('dashboard')" href="#">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span>Dashboard</span>
+    </a>
+    <a class="nav-item" onclick="showPage('processos')" href="#">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      <span>Processos</span>
+    </a>
+    <a class="nav-item" onclick="showPage('relatorios')" href="#">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      <span>Relatórios</span>
+    </a>
+    <div class="nav-label" style="margin-top:12px;">Sistema</div>
+    <a class="nav-item" onclick="showPage('admin')" href="#">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span>Administração</span>
+    </a>
+  </nav>
+</aside>
+
+<!-- Main -->
+<main class="main">
+  <header class="topbar">
+    <span class="topbar-title" id="pageTitle">Dashboard</span>
+    <div class="topbar-right">
+      <span id="topbarDate" style="font-size:12px; color:var(--text3);"></span>
+      <button class="btn btn-primary" onclick="openModal()">
+        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Novo processo
+      </button>
+    </div>
+  </header>
+
+  <!-- DASHBOARD -->
+  <div class="content">
+    <div class="page active" id="page-dashboard">
+      <div id="alertsArea"></div>
+
+      <div class="metrics-grid" id="metricsGrid"></div>
+
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3>Processos por situação</h3>
+          <div class="chart-sub">Distribuição atual do status</div>
+          <div style="display:flex; align-items:center; gap:24px;">
+            <div class="chart-wrap" style="width:180px; height:180px; flex-shrink:0;">
+              <canvas id="chartSituacao"></canvas>
+            </div>
+            <div class="donut-legend" id="legendSituacao"></div>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <h3>Controle de prazos</h3>
+          <div class="chart-sub">Situação dos prazos dos processos</div>
+          <div class="chart-wrap" style="height:180px;">
+            <canvas id="chartPrazos"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card full">
+          <h3>Evolução mensal de solicitações</h3>
+          <div class="chart-sub">Número de processos abertos por mês</div>
+          <div class="chart-wrap" style="height:220px;">
+            <canvas id="chartMensal"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROCESSOS -->
+    <div class="page" id="page-processos">
+      <div class="section-header">
+        <span class="section-title">Controle de processos</span>
+        <div class="toolbar">
+          <div class="search-box">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="searchInput" placeholder="Buscar processo..." oninput="renderTable()"/>
+          </div>
+          <select class="filter" id="filterSit" onchange="renderTable()">
+            <option value="">Todas situações</option>
+            <option>Ag. Avaliação</option>
+            <option>Ag. Conclusão</option>
+            <option>Ag. Envio de documentação</option>
+            <option>Ag. Implantação</option>
+            <option>Ag. Lançamento Tributário</option>
+            <option>Ag. Pagamento da vistoria</option>
+            <option>Ag. Vistoria Final</option>
+            <option>Ag. Vistoria Inicial</option>
+            <option>Ag. análise do projeto</option>
+            <option>Ag. elaboração do Termo de Responsabilidade</option>
+            <option>Ag. encerramento da solicitação</option>
+            <option>Ag. entrega das correções solicitadas no projeto</option>
+            <option>Ag. entrega do projeto</option>
+            <option>Ag. pagamento vistoria</option>
+            <option>Ag. registro de inventário ambiental</option>
+            <option>Em implantação</option>
+            <option>Concluido</option>
+            <option>Solicitação negada</option>
+          </select>
+          <select class="filter" id="filterPrazo" onchange="renderTable()">
+            <option value="">Todos prazos</option>
+            <option value="vencido">Vencidos</option>
+            <option value="proximo">A vencer (5 dias)</option>
+            <option value="ok">Em dia</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Nº Processo</th>
+              <th>Nº Solicitação</th>
+              <th>Rodovia</th>
+              <th>Ocupação / Descrição</th>
+              <th>Situação</th>
+              <th>Prazo</th>
+              <th style="text-align:right">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+        <div class="table-footer" id="tableFooter"></div>
+      </div>
+    </div>
+
+    <!-- RELATÓRIOS -->
+    <div class="page" id="page-relatorios">
+      <div class="section-header">
+        <span class="section-title">Relatórios analíticos</span>
+      </div>
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3>Por tipo de solicitação</h3>
+          <div class="chart-sub">Distribuição por categoria</div>
+          <div class="chart-wrap" style="height:220px;"><canvas id="chartTipo"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Taxa de conclusão</h3>
+          <div class="chart-sub">Concluídos vs negados vs em andamento</div>
+          <div class="chart-wrap" style="height:220px;"><canvas id="chartAprov"></canvas></div>
+        </div>
+        <div class="chart-card full">
+          <h3>Tempo médio de resolução por situação</h3>
+          <div class="chart-sub">Dias médios até conclusão estimada</div>
+          <div class="chart-wrap" style="height:220px;"><canvas id="chartTempo"></canvas></div>
+        </div>
+      </div>
+    </div>
+    <!-- ADMINISTRAÇÃO -->
+    <div class="page" id="page-admin">
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:18px;">
+
+        <!-- SITUAÇÕES -->
+        <div class="chart-card" style="padding:22px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+            <div>
+              <h3 style="margin-bottom:2px;">Situações</h3>
+              <div class="chart-sub" style="margin-bottom:0;">Status disponíveis nos processos</div>
+            </div>
+            <span id="countSit" style="font-size:11px; background:var(--accent-light); color:var(--accent); padding:3px 10px; border-radius:20px; font-weight:600;"></span>
+          </div>
+          <div id="listSituacoes" style="display:flex; flex-direction:column; gap:6px; margin-bottom:14px;"></div>
+          <div style="display:flex; gap:8px; margin-top:4px;">
+            <input id="newSituacao" type="text" placeholder="Nova situação..." style="flex:1; padding:8px 11px; border:1px solid var(--border2); border-radius:var(--radius); font-family:inherit; font-size:13px; color:var(--text); background:var(--surface); outline:none;" onkeydown="if(event.key==='Enter') addSituacao()"/>
+            <button class="btn btn-primary" style="padding:8px 14px;" onclick="addSituacao()">
+              <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Adicionar
+            </button>
+          </div>
+        </div>
+
+        <!-- TIPOS -->
+        <div class="chart-card" style="padding:22px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+            <div>
+              <h3 style="margin-bottom:2px;">Tipos de ocupação</h3>
+              <div class="chart-sub" style="margin-bottom:0;">Categorias de solicitação</div>
+            </div>
+            <span id="countTipo" style="font-size:11px; background:var(--info-bg); color:var(--info); padding:3px 10px; border-radius:20px; font-weight:600;"></span>
+          </div>
+          <div id="listTipos" style="display:flex; flex-direction:column; gap:6px; margin-bottom:14px;"></div>
+          <div style="display:flex; gap:8px; margin-top:4px;">
+            <input id="newTipo" type="text" placeholder="Novo tipo..." style="flex:1; padding:8px 11px; border:1px solid var(--border2); border-radius:var(--radius); font-family:inherit; font-size:13px; color:var(--text); background:var(--surface); outline:none;" onkeydown="if(event.key==='Enter') addTipo()"/>
+            <button class="btn btn-primary" style="padding:8px 14px;" onclick="addTipo()">
+              <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Adicionar
+            </button>
+          </div>
+        </div>
+
+        <!-- CAMPOS EXTRAS -->
+        <div class="chart-card" style="padding:22px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+            <div>
+              <h3 style="margin-bottom:2px;">Campos adicionais</h3>
+              <div class="chart-sub" style="margin-bottom:0;">Campos extras no formulário de processo</div>
+            </div>
+            <span id="countCampos" style="font-size:11px; background:var(--warning-bg); color:var(--warning); padding:3px 10px; border-radius:20px; font-weight:600;"></span>
+          </div>
+          <div id="listCampos" style="display:flex; flex-direction:column; gap:6px; margin-bottom:14px;"></div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:4px;">
+            <input id="newCampoLabel" type="text" placeholder="Nome do campo..." style="flex:2; min-width:120px; padding:8px 11px; border:1px solid var(--border2); border-radius:var(--radius); font-family:inherit; font-size:13px; color:var(--text); background:var(--surface); outline:none;"/>
+            <select id="newCampoTipo" style="flex:1; min-width:100px; padding:8px 10px; border:1px solid var(--border2); border-radius:var(--radius); font-family:inherit; font-size:13px; color:var(--text); background:var(--surface); outline:none;">
+              <option value="text">Texto</option>
+              <option value="number">Número</option>
+              <option value="date">Data</option>
+              <option value="select">Seleção</option>
+            </select>
+            <button class="btn btn-primary" style="padding:8px 14px;" onclick="addCampo()">
+              <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Adicionar
+            </button>
+          </div>
+        </div>
+
+        <!-- CONFIGURAÇÕES GERAIS -->
+        <div class="chart-card" style="padding:22px;">
+          <div style="margin-bottom:16px;">
+            <h3 style="margin-bottom:2px;">Configurações gerais</h3>
+            <div class="chart-sub" style="margin-bottom:0;">Preferências do sistema</div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:14px;">
+            <div>
+              <label style="font-size:12px; font-weight:600; color:var(--text2); display:block; margin-bottom:5px;">Nome do sistema</label>
+              <input id="cfg_nome" type="text" value="Faixa de Domínio" style="width:100%; padding:8px 11px; border:1px solid var(--border2); border-radius:var(--radius); font-family:inherit; font-size:13px; color:var(--text); background:var(--surface); outline:none; box-sizing:border-box;"/>
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600; color:var(--text2); display:block; margin-bottom:5px;">Aviso de prazo (dias)</label>
+              <input id="cfg_prazo" type="number" value="5" min="1" max="30" style="width:100%; padding:8px 11px; border:1px solid var(--border2); border-radius:var(--radius); font-family:inherit; font-size:13px; color:var(--text); background:var(--surface); outline:none; box-sizing:border-box;"/>
+              <span style="font-size:11px; color:var(--text3); margin-top:4px; display:block;">Processos dentro desse prazo aparecem em amarelo</span>
+            </div>
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:12px; background:var(--surface2); border-radius:var(--radius); border:1px solid var(--border);">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text);">Exportar dados</div>
+                <div style="font-size:11px; color:var(--text3); margin-top:2px;">Baixar todos os processos em JSON</div>
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick="exportarDados()">
+                <svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Exportar
+              </button>
+            </div>
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:12px; background:var(--surface2); border-radius:var(--radius); border:1px solid var(--border);">
+              <div>
+                <div style="font-size:13px; font-weight:500; color:var(--text);">Importar dados</div>
+                <div style="font-size:11px; color:var(--text3); margin-top:2px;">Restaurar processos de um arquivo JSON</div>
+              </div>
+              <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
+                <svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Importar
+                <input type="file" accept=".json" style="display:none;" onchange="importarDados(event)"/>
+              </label>
+            </div>
+            <button class="btn btn-primary" style="width:100%; justify-content:center;" onclick="salvarConfiguracoes()">Salvar configurações</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- BANCO DE DADOS SUPABASE -->
+      <div class="chart-card" style="padding:22px; margin-top:0;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+          <div>
+            <h3 style="margin-bottom:2px;">Banco de dados — Supabase</h3>
+            <div class="chart-sub" style="margin-bottom:0;">Conecte ao banco na nuvem para múltiplos usuários</div>
+          </div>
+          <span id="statusConexao" style="font-size:12px; color:var(--text3);">Não configurado — dados apenas na memória</span>
+        </div>
+
+        <div style="background:var(--info-bg); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; margin-bottom:16px;">
+          <div style="font-size:12px; font-weight:600; color:var(--info); margin-bottom:8px;">📋 Como configurar (5 minutos, gratuito):</div>
+          <ol style="font-size:12px; color:var(--text2); padding-left:16px; display:flex; flex-direction:column; gap:5px; line-height:1.6;">
+            <li>Acesse <a href="https://supabase.com" target="_blank" style="color:var(--accent);">supabase.com</a> e crie uma conta gratuita</li>
+            <li>Clique em <b>New project</b>, dê um nome e escolha uma senha forte</li>
+            <li>Aguarde o projeto ser criado (~1 min) e vá em <b>Settings → API</b></li>
+            <li>Copie a <b>Project URL</b> e a chave <b>anon public</b> e cole nos campos abaixo</li>
+            <li>Vá em <b>SQL Editor</b> no menu lateral, cole o script abaixo e clique em <b>Run</b></li>
+            <li>Volte aqui, preencha as credenciais e clique em <b>Testar e conectar</b></li>
+          </ol>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <div style="font-size:12px; font-weight:600; color:var(--text2); margin-bottom:6px;">Script SQL — cole no Supabase → SQL Editor → New query:</div>
+          <div style="position:relative;">
+            <pre id="sqlScript" style="background:#1a1714; color:#e8f2ed; border-radius:var(--radius); padding:14px 16px; font-size:11px; font-family:'DM Mono',monospace; line-height:1.7; overflow-x:auto; margin:0; white-space:pre-wrap;">create table if not exists processos (
+  id bigint primary key,
+  processo text,
+  solicitacao text,
+  tipo text,
+  requerente text,
+  situacao text,
+  prazo date,
+  obs text,
+  abertura date,
+  rodovia text,
+  ocupacao text,
+  lat numeric,
+  lng numeric,
+  created_at timestamptz default now()
+);
+
+alter table processos enable row level security;
+create policy "acesso_publico" on processos
+  for all using (true) with check (true);</pre>
+            <button onclick="copiarSQL()" style="position:absolute;top:8px;right:8px;border:none;background:rgba(255,255,255,0.12);color:#e8f2ed;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:inherit;">Copiar</button>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px;">
+          <div>
+            <label style="font-size:12px; font-weight:600; color:var(--text2); display:block; margin-bottom:5px;">Project URL</label>
+            <input id="sb_url" type="text" placeholder="https://xxxx.supabase.co" style="width:100%; box-sizing:border-box; padding:9px 12px; border:1px solid var(--border2); border-radius:var(--radius); font-family:inherit; font-size:13px; color:var(--text); background:var(--surface); outline:none;" oninput="SUPABASE_URL=this.value"/>
+          </div>
+          <div>
+            <label style="font-size:12px; font-weight:600; color:var(--text2); display:block; margin-bottom:5px;">Chave anon public</label>
+            <input id="sb_key" type="password" placeholder="eyJhbGci..." style="width:100%; box-sizing:border-box; padding:9px 12px; border:1px solid var(--border2); border-radius:var(--radius); font-family:inherit; font-size:13px; color:var(--text); background:var(--surface); outline:none;" oninput="SUPABASE_KEY=this.value"/>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="testarConexao()">
+            <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            Testar e conectar
+          </button>
+          <button class="btn btn-ghost" onclick="carregarDoBanco()">
+            <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Recarregar dados
+          </button>
+          <button class="btn btn-ghost" onclick="migrarDadosParaBanco()">
+            <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Migrar dados atuais para o banco
+          </button>
+        </div>
+      </div>
+
+      <!-- TOAST -->
+      <div id="adminToast" style="display:none; position:fixed; bottom:24px; right:24px; background:var(--accent); color:white; padding:12px 20px; border-radius:var(--radius); font-size:13px; font-weight:500; z-index:500; box-shadow:var(--shadow-md);"></div>
+
+    </div>
+
+  </div>
+</main>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModalOutside(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">Novo processo</h2>
+      <button class="modal-close" onclick="closeModal()">
+        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="form-grid" style="grid-template-columns: 1fr 1fr 1fr;">
+      <div class="form-group">
+        <label>Nº Processo *</label>
+        <input id="f_processo" type="text" placeholder="Ex: 2024/0001"/>
+      </div>
+      <div class="form-group">
+        <label>Nº Solicitação *</label>
+        <input id="f_solicitacao" type="text" placeholder="Ex: SOL-2024-001"/>
+      </div>
+      <div class="form-group">
+        <label>Requerente</label>
+        <input id="f_requerente" type="text" placeholder="Nome ou empresa"/>
+      </div>
+      <div class="form-group">
+        <label>Tipo</label>
+        <select id="f_tipo">
+          <option>Ocupação Longitudinal</option>
+          <option>Ocupação Transversal</option>
+          <option>Ocupação Mista</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Situação atual</label>
+        <select id="f_situacao">
+          <option>Ag. Avaliação</option>
+          <option>Ag. Conclusão</option>
+          <option>Ag. Envio de documentação</option>
+          <option>Ag. Implantação</option>
+          <option>Ag. Lançamento Tributário</option>
+          <option>Ag. Pagamento da vistoria</option>
+          <option>Ag. Vistoria Final</option>
+          <option>Ag. Vistoria Inicial</option>
+          <option>Ag. análise do projeto</option>
+          <option>Ag. elaboração do Termo de Responsabilidade</option>
+          <option>Ag. encerramento da solicitação</option>
+          <option>Ag. entrega das correções solicitadas no projeto</option>
+          <option>Ag. entrega do projeto</option>
+          <option>Ag. pagamento vistoria</option>
+          <option>Ag. registro de inventário ambiental</option>
+          <option>Em implantação</option>
+          <option>Concluido</option>
+          <option>Solicitação negada</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Prazo</label>
+        <input id="f_prazo" type="date"/>
+      </div>
+      <div class="form-group">
+        <label>Latitude (graus decimais)</label>
+        <input id="f_lat" type="number" step="any" placeholder="Ex: -25.429722" oninput="atualizarPreviewMaps()"/>
+      </div>
+      <div class="form-group">
+        <label>Longitude (graus decimais)</label>
+        <input id="f_lng" type="number" step="any" placeholder="Ex: -49.271111" oninput="atualizarPreviewMaps()"/>
+      </div>
+      <div class="form-group">
+        <label>Rodovia</label>
+        <input id="f_rodovia" type="text" placeholder="Ex: PR092"/>
+      </div>
+      <div id="mapsPreview" style="display:none; grid-column:1/-1; align-items:center; gap:10px; padding:10px 12px; background:var(--surface2); border-radius:var(--radius); border:1px solid var(--border);">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:var(--accent);fill:none;stroke-width:2;flex-shrink:0;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          <span id="mapsCoordLabel" style="font-size:12px; font-family:'DM Mono',monospace; color:var(--text2);"></span>
+          <a id="mapsLink" href="#" target="_blank" style="font-size:12px; color:var(--accent); text-decoration:none; font-weight:500; padding:3px 10px; background:var(--accent-light); border-radius:20px;">Abrir no Google Maps ↗</a>
+        </div>
+      </div>
+      <div class="form-group full">
+        <label>Ocupação / Descrição</label>
+        <input id="f_ocupacao" type="text" placeholder="Ex: FIBRA ÓTICA - RODOVIA PR092 - KM 15,100"/>
+      </div>
+      <div class="form-group full">
+        <label>Observações</label>
+        <textarea id="f_obs" placeholder="Informações adicionais..." style="min-height:60px;"></textarea>
+      </div>
+      <div id="camposExtrasModal"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveRecord()">Salvar processo</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── DATA ───────────────────────────────────────────────
+let SITUACOES = ['Ag. Avaliação','Ag. Conclusão','Ag. Envio de documentação','Ag. Implantação','Ag. Lançamento Tributário','Ag. Pagamento da vistoria','Ag. Vistoria Final','Ag. Vistoria Inicial','Ag. análise do projeto','Ag. elaboração do Termo de Responsabilidade','Ag. encerramento da solicitação','Ag. entrega das correções solicitadas no projeto','Ag. entrega do projeto','Ag. pagamento vistoria','Ag. registro de inventário ambiental','Em implantação','Concluido','Solicitação negada'];
+let TIPOS = ['Ocupação Longitudinal','Ocupação Transversal','Ocupação Mista'];
+let CAMPOS_EXTRAS = [];
+let PRAZO_AVISO_DIAS = 5;
+
+function randItem(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function addDays(date, d){ const r=new Date(date); r.setDate(r.getDate()+d); return r; }
+function fmtDate(d){ if(!d) return '—'; const [y,m,dia]=d.split('-'); return `${dia}/${m}/${y}`; }
+function toISO(d){ return d.toISOString().split('T')[0]; }
+
+const hoje = new Date(); hoje.setHours(0,0,0,0);
+
+let dados = [{"id":1,"processo":"2014/4842014","solicitacao":"4842014","tipo":"","requerente":"","situacao":"Ag. Conclusão","prazo":"","obs":"SEM INFORMAÇÕES NO SIDER","abertura":"","rodovia":"PR092","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR092 - KM 28,600"},{"id":2,"processo":"2016/1992016","solicitacao":"1992016","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Processo sem movimentação desde 2016.","abertura":"","rodovia":"PR092","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR092 - KM 45,018"},{"id":3,"processo":"2016/3552016","solicitacao":"3552016","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"SEM INFORMAÇÕES NO SIDER","abertura":"","rodovia":"PR417","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR417 - KM 5,917 AO 5,945"},{"id":4,"processo":"2016/5182016","solicitacao":"5182016","tipo":"","requerente":"","situacao":"Ag. elaboração do Termo de Responsabilidade","prazo":"","obs":"Marcio solicitou entrega de projetos corrigidos em 2023","abertura":"","rodovia":"PR510","ocupacao":"ACESSO COMERCIAL - RODOVIA PR510 - KM 73,160"},{"id":5,"processo":"2017/3502017","solicitacao":"3502017","tipo":"","requerente":"","situacao":"Ag. encerramento da solicitação","prazo":"","obs":"SEM INFORMAÇÕES NO SIDER","abertura":"","rodovia":"PR415","ocupacao":"FIBRA ÓTICA - RODOVIA PR415 - KM 4,974,- RODOVIA PR415 - KM 4,974 AO 5,160"},{"id":6,"processo":"2018/2592018","solicitacao":"2592018","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Processo sem movimentação desde 2021","abertura":"","rodovia":"PR418","ocupacao":"FIBRA ÓTICA - RODOVIA PR418 - KM 17,825"},{"id":7,"processo":"2018/3472018","solicitacao":"3472018","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"Empresa enviou link para dowload dos documentos em 2019. Sem mais informações.","abertura":"","rodovia":"PR418","ocupacao":"FIBRA ÓTICA - RODOVIA PR418 - KM 0,052 AO 0,331"},{"id":8,"processo":"2018/3482018","solicitacao":"3482018","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"Empresa enviou link para dowload dos documentos em 2019. Sem mais informações.","abertura":"","rodovia":"PR090","ocupacao":"FIBRA ÓTICA - RODOVIA PR090 - KM 10,756"},{"id":9,"processo":"2018/4962018","solicitacao":"4962018","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"Processo sem movimentação desde 2018.","abertura":"","rodovia":"PR419","ocupacao":"FIBRA ÓTICA - RODOVIA PR-419; LONGITUDINAL - KM 15,874 AO 16,025"},{"id":10,"processo":"2018/5432018","solicitacao":"5432018","tipo":"","requerente":"","situacao":"Em implantação","prazo":"","obs":"Projeto aprovado em 2019. Última movimentação em 2021 no protocolo.","abertura":"","rodovia":"PR418","ocupacao":"ADUTORA - RODOVIA PR418 - KM 9,000"},{"id":11,"processo":"2018/7282018","solicitacao":"7282018","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Processo sem movimentação desde 2018.","abertura":"","rodovia":"PR415","ocupacao":"FIBRA ÓTICA - RODOVIA PR415 - KM 0,935"},{"id":12,"processo":"2018/7732018","solicitacao":"7732018","tipo":"","requerente":"","situacao":"Ag. Vistoria Inicial","prazo":"","obs":"Protocolo recebido por Nicole em 2019. Processo parado por falta de encaminhamento por parte da Nicole. SEM MAIS INFORMAÇÕES.","abertura":"","rodovia":"PR092","ocupacao":"FIBRA ÓTICA - RODOVIA PR092 - KM 15,100 AO 21,440"},{"id":13,"processo":"2019/132019","solicitacao":"132019","tipo":"","requerente":"","situacao":"Ag. entrega das correções solicitadas no projeto","prazo":"","obs":"Foram indicadas correções no projeto em 2020. Sem movimentações desde então.","abertura":"","rodovia":"PR092","ocupacao":"FIBRA ÓTICA - RODOVIA PR092 - KM 30,950 AO 31,200"},{"id":14,"processo":"2019/652019","solicitacao":"652019","tipo":"","requerente":"","situacao":"Ag. entrega das correções solicitadas no projeto","prazo":"","obs":"Foram indicadas correções no projeto em 2020. Sem movimentações desde então.","abertura":"","rodovia":"PR417","ocupacao":"FIBRA ÓTICA - RODOVIA PR417 - KM 3,440"},{"id":15,"processo":"2019/822019","solicitacao":"822019","tipo":"","requerente":"","situacao":"Ag. elaboração do Termo de Responsabilidade","prazo":"","obs":"Processo sem movimentação desde 2019.","abertura":"","rodovia":"PR090","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR090 - KM 22,450 AO 22,681"},{"id":16,"processo":"2019/4442019","solicitacao":"4442019","tipo":"","requerente":"","situacao":"Ag. entrega das correções solicitadas no projeto","prazo":"","obs":"Foram indicadas correções no projeto em 2019. Sem movimentações desde então.","abertura":"","rodovia":"PR506","ocupacao":"FIBRA ÓTICA - RODOVIA PR506 - KM 22,153 AO 24,131"},{"id":17,"processo":"2019/5482019","solicitacao":"5482019","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Foram indicadas correções no projeto em 2019. Sem movimentações desde então.","abertura":"","rodovia":"PR415","ocupacao":"ACESSO PÚBLICO - RODOVIA PR415 - KM 9,169"},{"id":18,"processo":"2019/6032019","solicitacao":"6032019","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Rodovia fora da área da S.R. Leste. Sugerido o arquivamento em 2025","abertura":"","rodovia":"PR418","ocupacao":"FIBRA ÓTICA - RODOVIA PR418 - KM 7,260"},{"id":19,"processo":"2020/172020","solicitacao":"172020","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Enviado para Marcio analisar em 2023.","abertura":"","rodovia":"PR092","ocupacao":"FIBRA ÓTICA - RODOVIA PR092 - KM 18,294 AO 20,707"},{"id":20,"processo":"2020/802020","solicitacao":"802020","tipo":"","requerente":"","situacao":"Ag. Vistoria Final","prazo":"","obs":"Eng. Gustavo pediu a versão final do projeto em 2023","abertura":"","rodovia":"PR506","ocupacao":"ACESSO PRIVATIVO - RODOVIA PR506 - KM 24,834"},{"id":21,"processo":"2020/1882020","solicitacao":"1882020","tipo":"","requerente":"","situacao":"Em implantação","prazo":"","obs":"Marcos pediu para Cristiane analisar o processo em 2025 via protocolo","abertura":"","rodovia":"PR419","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR419 - KM 0,645 AO 1,119"},{"id":22,"processo":"2020/1992020","solicitacao":"1992020","tipo":"","requerente":"","situacao":"Em implantação","prazo":"","obs":"Obra autorizada em 2025.","abertura":"","rodovia":"PR092","ocupacao":"FIBRA ÓTICA - RODOVIA PR092 - KM 15,609 AO 16,150"},{"id":23,"processo":"2020/2352020","solicitacao":"2352020","tipo":"","requerente":"","situacao":"Em implantação","prazo":"","obs":"Aguardando vistoria final","abertura":"","rodovia":"PR281","ocupacao":"ADUTORA - ROD. PR-281 KM 30+170M - AGUDOS DO SUL-PR"},{"id":24,"processo":"2020/2452020","solicitacao":"2452020","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Pedido de prorrogação de prazo para a obra em 2021. Parado na carga do Marcio desde 2023","abertura":"","rodovia":"PR405","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR405 - KM 35,941 AO 35,997"},{"id":25,"processo":"2020/3372020","solicitacao":"3372020","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Obra autorizada em 2025.","abertura":"","rodovia":"PR092","ocupacao":"FIBRA ÓTICA - RODOVIA PR092 - KM 86,646"},{"id":26,"processo":"2020/4362020","solicitacao":"4362020","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Obra autorizada em 2020.","abertura":"","rodovia":"PR412","ocupacao":"ADUTORA - PR-412 KM 63+986M"},{"id":27,"processo":"2020/6642020","solicitacao":"6642020","tipo":"","requerente":"","situacao":"Em implantação","prazo":"","obs":"Obra autorizada em 2025.","abertura":"","rodovia":"PR090","ocupacao":"ESGOTAMENTO SANITÁRIO - RODOVIA PR090 - KM 10,540"},{"id":28,"processo":"2020/6702020","solicitacao":"6702020","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Processo na carga do Maycon para análise. Projeto aprovado em 2021 pelo Rui","abertura":"","rodovia":"PR092","ocupacao":"FIBRA ÓTICA - RODOVIA PR092 - KM 56,643"},{"id":29,"processo":"2021/382021","solicitacao":"382021","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Não foi localizado o As Built. Última informação de 2023","abertura":"","rodovia":"PR418","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR418"},{"id":30,"processo":"2021/1152021","solicitacao":"1152021","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Obra autorizada em 2025.","abertura":"","rodovia":"PR412","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR412 - KM 2,571 AO 7,355"},{"id":31,"processo":"2021/1282021","solicitacao":"1282021","tipo":"","requerente":"","situacao":"Em implantação","prazo":"","obs":"Obra autorizada em 2025.","abertura":"","rodovia":"PR410","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR410 - KM 19,878 AO 21,014"},{"id":32,"processo":"2021/2302021","solicitacao":"2302021","tipo":"","requerente":"","situacao":"Em implantação","prazo":"","obs":"Obra autorizada em 2025.","abertura":"","rodovia":"PR423","ocupacao":"ADUTORA - RODOVIA PR423 - KM 34,005"},{"id":33,"processo":"2021/2532021","solicitacao":"2532021","tipo":"","requerente":"","situacao":"Ag. entrega das correções solicitadas no projeto","prazo":"","obs":"Fehlauer encaminhou o processo para o Maycon analisar via protocolo em 2025.","abertura":"","rodovia":"PR417","ocupacao":"ESGOTAMENTO SANITÁRIO - RODOVIA PR417 - KM 2,516"},{"id":34,"processo":"2021/3672021","solicitacao":"3672021","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Gabriel solicitou correções no projeto em 2025","abertura":"","rodovia":"PR092","ocupacao":"ADUTORA - RODOVIA PR340 - KM 110,460"},{"id":35,"processo":"2021/3782021","solicitacao":"3782021","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Obra autorizada em 2025.","abertura":"","rodovia":"PR412","ocupacao":"FIBRA ÓTICA - RODOVIA PR412 - KM 37,540 AO 37,660"},{"id":36,"processo":"2021/3862021","solicitacao":"3862021","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Obra autorizada em 2025.","abertura":"","rodovia":"PR092","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR092 - KM 74,400"},{"id":37,"processo":"2021/3952021","solicitacao":"3952021","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Obra autorizada em 2025.","abertura":"","rodovia":"PR092","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR092 - KM 33,350"},{"id":38,"processo":"2021/4452021","solicitacao":"4452021","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Obra autorizada em 2025.","abertura":"","rodovia":"PR412","ocupacao":"FIBRA ÓTICA - RODOVIA PR412 - KM 35,400 AO 35,530"},{"id":39,"processo":"2021/5102021","solicitacao":"5102021","tipo":"","requerente":"","situacao":"Em implantação","prazo":"","obs":"Obra autorizada em 2025.","abertura":"","rodovia":"PR412","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR412 - KM 63,230"},{"id":40,"processo":"2021/5192021","solicitacao":"5192021","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Processo sem movimentação desde 2021","abertura":"","rodovia":"PR281","ocupacao":"ADUTORA - RODOVIA PR281 - KM 8,875 AO 13,300"},{"id":41,"processo":"2021/5212021","solicitacao":"5212021","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Obra autorizada em 2025.","abertura":"","rodovia":"PR417","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR417 - KM 16,750"},{"id":42,"processo":"2021/5292021","solicitacao":"5292021","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Obra autorizada em 2025.","abertura":"","rodovia":"PR412","ocupacao":"FIBRA ÓTICA - RODOVIA PR412 - KM 51,900 AO 52,060"},{"id":43,"processo":"2021/5312021","solicitacao":"5312021","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Obra autorizada em 2025.","abertura":"","rodovia":"PR412","ocupacao":"FIBRA ÓTICA - RODOVIA PR412 - KM 51,311 AO 51,415"},{"id":44,"processo":"2021/5322021","solicitacao":"5322021","tipo":"","requerente":"","situacao":"Em implantação","prazo":"","obs":"Obra autorizada em 2025.","abertura":"","rodovia":"PR412","ocupacao":"FIBRA ÓTICA - RODOVIA PR412 - KM 65,320 AO 66,054"},{"id":45,"processo":"2021/5472021","solicitacao":"5472021","tipo":"","requerente":"","situacao":"Ag. entrega das correções solicitadas no projeto","prazo":"","obs":"Fehlauer encaminhou o processo para o Maycon analisar via protocolo em 2025.","abertura":"","rodovia":"PR092","ocupacao":"FIBRA ÓTICA - RODOVIA PR092 - KM 16,160 AO 16,580"},{"id":46,"processo":"2021/5492021","solicitacao":"5492021","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Obra concluída. Aguardando vistoria final desde 2025","abertura":"","rodovia":"PR800","ocupacao":"ESGOTAMENTO SANITÁRIO - RODOVIA PR800 - KM 3,830"},{"id":47,"processo":"2021/5502021","solicitacao":"5502021","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Processo parado devido à falta de correções pelo ENG. MARCIO GURSKI em 2023.","abertura":"","rodovia":"PR415","ocupacao":"ADUTORA - RODOVIA PR415 - KM 14,100"},{"id":48,"processo":"2021/5512021","solicitacao":"5512021","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Gabriel solicitou correções no projeto em 2026","abertura":"","rodovia":"PR415","ocupacao":"ADUTORA - RODOVIA PR415 - KM 5,300"},{"id":49,"processo":"2021/6752021","solicitacao":"6752021","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Gabriel autorizou o início das obras em 2025.","abertura":"","rodovia":"PR340","ocupacao":"FIBRA ÓTICA - RODOVIA PR340 - KM 20,043 AO 36,700"},{"id":50,"processo":"2021/6762021","solicitacao":"6762021","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Gabriel autorizou o início das obras em 2025.","abertura":"","rodovia":"PR405","ocupacao":"FIBRA ÓTICA - RODOVIA PR405 - KM 11,400 AO 76,610"},{"id":51,"processo":"2021/6862021","solicitacao":"6862021","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Projeto aguardando análise desde 2023. Gabriel solicitou informações via protocolo em 2026","abertura":"","rodovia":"PR092","ocupacao":"FIBRA ÓTICA - RODOVIA PR092 - KM 26,530 AO 29,340"},{"id":52,"processo":"2021/6982021","solicitacao":"6982021","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"Projetos anexados em 2022. Gabriel solicitou informações via protocolo em 2026","abertura":"","rodovia":"PR410","ocupacao":"FIBRA ÓTICA - RODOVIA PR410 - KM 0,124 AO 2,776"},{"id":53,"processo":"2022/582022","solicitacao":"582022","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"Gabriel solicitou correções no projeto em 2025","abertura":"","rodovia":"PR090","ocupacao":"ADUTORA - RODOVIA PR090 - KM 12,391"},{"id":54,"processo":"2022/622022","solicitacao":"622022","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Projetos aguardando análise desde 2025","abertura":"","rodovia":"PR090","ocupacao":"ADUTORA - RODOVIA PR090 - KM 16,500"},{"id":55,"processo":"2022/822022","solicitacao":"822022","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Projetos aprovados em 2024. Verificar vistoria final","abertura":"","rodovia":"PR090","ocupacao":"ESGOTAMENTO SANITÁRIO - RODOVIA PR090 E RODOVIA PR418"},{"id":56,"processo":"2022/842022","solicitacao":"842022","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Gabriel solicitou correções no projeto em 2025","abertura":"","rodovia":"PR090","ocupacao":"ADUTORA - RODOVIA PR090 - KM 13,755"},{"id":57,"processo":"2022/2192022","solicitacao":"2192022","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"Requerente solicitou posicionamento do DER acerca do pedido de uso da faixa em 2024","abertura":"","rodovia":"PR412","ocupacao":"ANÚNCIOS EM EQUIPAMENTOS AUXILIARES - TIPO E - RODOVIA PR412 - KM 33,712"},{"id":58,"processo":"2022/2312022","solicitacao":"2312022","tipo":"","requerente":"","situacao":"Ag. entrega das correções solicitadas no projeto","prazo":"","obs":"Murilo enviou email ao solicitante para dar continuidade ao processo em 2025.","abertura":"","rodovia":"PR281","ocupacao":"ADUTORA - RODOVIA PR281 - KM 8,900 AO 9,453"},{"id":59,"processo":"2022/2382022","solicitacao":"2382022","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Processo enviado para analise para Djenane em 2023. TRECHO SOB JURISDIÇÃO DA CONCESSIONÁRIA EPR.","abertura":"","rodovia":"PR407","ocupacao":"ACESSO COMERCIAL - RODOVIA PR407 - KM 1,200"},{"id":60,"processo":"2022/2432022","solicitacao":"2432022","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Elaine enviou o processo para Cristiane em 2025 para realização da vistoria final","abertura":"","rodovia":"PR412","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR412 - KM 62,994"},{"id":61,"processo":"2022/2762022","solicitacao":"2762022","tipo":"","requerente":"","situacao":"Em implantação","prazo":"","obs":"Solicitação sem movimentações desde 2022","abertura":"","rodovia":"PR281","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR281 - KM 26,686 AO 26,740"},{"id":62,"processo":"2022/4372022","solicitacao":"4372022","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"Solicitação sem movimentações desde 2022","abertura":"","rodovia":"PR407","ocupacao":"ACESSO PÚBLICO - RODOVIA PR407 - KM 2,800"},{"id":63,"processo":"2022/4752022","solicitacao":"4752022","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Gabriel solicitou correções no projeto em 2025","abertura":"","rodovia":"PR092","ocupacao":"ESGOTAMENTO SANITÁRIO - RODOVIA PR092, PR509"},{"id":64,"processo":"2022/5172022","solicitacao":"5172022","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Licença de implantação aprovada em 2023. Protocolo na carga do Marrão desde 2025 para análise.","abertura":"","rodovia":"PR417","ocupacao":"ADUTORA - RODOVIA PR417 - KM 2,153"},{"id":65,"processo":"2022/5182022","solicitacao":"5182022","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Solicitada correção no projeto em 2023. Gabriel solicitou coleta de informações via protocolo em 2026","abertura":"","rodovia":"PR417","ocupacao":"ADUTORA - RODOVIA PR417 - KM 5,065"},{"id":66,"processo":"2022/5192022","solicitacao":"5192022","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Gabriel informou ao requerente que o projeto será aprovado sem as correções conforme alinhamento com a coordenadora da região Norte (em 2025)","abertura":"","rodovia":"PR090","ocupacao":"ADUTORA - RODOVIA PR090 - KM 15,050"},{"id":67,"processo":"2022/6362022","solicitacao":"6362022","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Em 2023 foi solicitada uma nova guia para recolhimento. Gabriel solicitou coleta de informações em 2026","abertura":"","rodovia":"PR417","ocupacao":"ADUTORA - RODOVIA PR417 - KM 11,321"},{"id":68,"processo":"2022/6372022","solicitacao":"6372022","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Solicitada correção no projeto em 2023. Gabriel solicitou coleta de informações via protocolo em 2026","abertura":"","rodovia":"PR417","ocupacao":"ADUTORA - RODOVIA PR417 - KM 10,990"},{"id":69,"processo":"2022/6882022","solicitacao":"6882022","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Solicitada correção no projeto em 2023. Eprotocolo enviado para a carga do Marrão em 2025","abertura":"","rodovia":"PR092","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR092 - KM 116,080"},{"id":70,"processo":"2022/7122022","solicitacao":"7122022","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"TRECHO SOB JURISDIÇÃO DA CONCESSIONÁRIA EPR.","abertura":"","rodovia":"PR407","ocupacao":"ACESSO COMERCIAL - RODOVIA PR407 - KM 18,390"},{"id":71,"processo":"2022/8592022","solicitacao":"8592022","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Solicitada correção no projeto em 2023. Elaine solicitou análise para Cristiane em 2025.","abertura":"","rodovia":"PR412","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR412 - KM 4,100"},{"id":72,"processo":"2022/8902022","solicitacao":"8902022","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Solicitada correção no projeto em 2023","abertura":"","rodovia":"PR423","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR423 - KM 29,520 AO 30,136"},{"id":73,"processo":"2022/10842022","solicitacao":"10842022","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Solicitado correções no projeto em 2023.","abertura":"","rodovia":"PR415","ocupacao":"PLACAS DE ATRATIVOS TURÍSTICOS - RODOVIA PR415 - KM 4,078"},{"id":74,"processo":"2022/11292022","solicitacao":"11292022","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Projeto corrigido enviado para Marcio Gurski em 2024. Marcos enviou o protocolo para Cristiane em 2025 solicitando providências","abertura":"","rodovia":"PR281","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR281 - KM 19,534 AO 20,610"},{"id":75,"processo":"2023/2012023","solicitacao":"2012023","tipo":"","requerente":"","situacao":"Ag. pagamento vistoria","prazo":"","obs":"Solicitado anexo de croqui funcional do projeto em 2025.","abertura":"","rodovia":"PR092","ocupacao":"ACESSO PRIVATIVO - RODOVIA PR092 - KM 61,878"},{"id":76,"processo":"2023/2242023","solicitacao":"2242023","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Cristiane reiterou que adequações devem ser feitas no projeto em 2025.","abertura":"","rodovia":"PR415","ocupacao":"ACESSO PÚBLICO - RODOVIA PR415 - KM 13,213"},{"id":77,"processo":"2023/2322023","solicitacao":"2322023","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Solicitado anexo de croqui funcional do projeto em 2025.","abertura":"","rodovia":"PR421","ocupacao":"ACESSO COMERCIAL - RODOVIA PR421 - KM 6,550"},{"id":78,"processo":"2023/2332023","solicitacao":"2332023","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Solicitado anexo de croqui funcional do projeto em 2025.","abertura":"","rodovia":"PR421","ocupacao":"ACESSO COMERCIAL - RODOVIA PR421 - KM 7,050"},{"id":79,"processo":"2023/2692023","solicitacao":"2692023","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Gabriel solicitou coleta de informações em 2026","abertura":"","rodovia":"PR415","ocupacao":"FIBRA ÓTICA - RODOVIA PR415 - KM 12,848 AO 13,993 E RODOVIA PR-506 - KM 7,675 AO 7,930"},{"id":80,"processo":"2023/2862023","solicitacao":"2862023","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Anderson solicitou correções no projeto em 2024","abertura":"","rodovia":"PR417","ocupacao":"ADUTORA - RODOVIA PR417 - KM 1,148"},{"id":81,"processo":"2023/2922023","solicitacao":"2922023","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Projeto aprovado em 2024. Sem mais informações","abertura":"","rodovia":"PR506","ocupacao":"ADUTORA - RODOVIA PR506 - KM 28,709"},{"id":82,"processo":"2023/3442023","solicitacao":"3442023","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Cristiane reiterou que adequações devem ser feitas no projeto em 2025.","abertura":"","rodovia":"PR092","ocupacao":"FIBRA ÓTICA - RODOVIA PR092 - KM 86,960 AO 89,200"},{"id":83,"processo":"2023/3952023","solicitacao":"3952023","tipo":"","requerente":"","situacao":"Ag. elaboração do Termo de Responsabilidade","prazo":"","obs":"Cristiane reiterou que adequações devem ser feitas no projeto em 2025.","abertura":"","rodovia":"PR092","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR092 - KM 29,362"},{"id":84,"processo":"2023/4582023","solicitacao":"4582023","tipo":"","requerente":"","situacao":"Ag. elaboração do Termo de Responsabilidade","prazo":"","obs":"Projeto aprovado em 2024. Sem mais informações","abertura":"","rodovia":"PR281","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR281 - KM 39,032"},{"id":85,"processo":"2023/4592023","solicitacao":"4592023","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Cristiane reiterou que adequações devem ser feitas no projeto em 2026.","abertura":"","rodovia":"PR412","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR412 - KM 18,154 AO 18,225"},{"id":86,"processo":"2023/7242023","solicitacao":"7242023","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Projetos aprovados. Gustavo solicitou a retirada das vias pelo requerente em 2024","abertura":"","rodovia":"PR419","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR419 - KM 11,934"},{"id":87,"processo":"2023/7372023","solicitacao":"7372023","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Murilo solicitou adequações no projeto em 2025","abertura":"","rodovia":"PR090","ocupacao":"ACESSO PÚBLICO - RODOVIA PR090 - KM 11,000"},{"id":88,"processo":"2023/7482023","solicitacao":"7482023","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Gabriel solicitou correções no projeto em 2023","abertura":"","rodovia":"PR092","ocupacao":"ESGOTAMENTO SANITÁRIO - RODOVIA PR092 - KM 85,490 AO 87,030"},{"id":89,"processo":"2023/7672023","solicitacao":"7672023","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Murilo solicitou adequações no projeto em 2025","abertura":"","rodovia":"PR092","ocupacao":"ACESSO COMERCIAL - RODOVIA PR092 - KM 280,177"},{"id":90,"processo":"2023/7962023","solicitacao":"7962023","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Alterações entregues ao Marcio em 2024 para nova análise. Marcos enviou o protocolo para a Cristiane em 2025 para análise","abertura":"","rodovia":"PR510","ocupacao":"CÂMERAS DE SEGURANÇA - RODOVIA PR510 - KM 51,947"},{"id":91,"processo":"2023/8012023","solicitacao":"8012023","tipo":"","requerente":"","situacao":"Em implantação","prazo":"","obs":"Marcos enviou o protocolo para a Cristiane em 2025 para análise","abertura":"","rodovia":"PR281","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR281 - KM 37,012"},{"id":92,"processo":"2023/8762023","solicitacao":"8762023","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Anderson solicitou a coleta das vias pela requerente em 2024. Marcos enviou o protocolo para a Cristiane em 2025 para análise","abertura":"","rodovia":"PR281","ocupacao":"ESGOTAMENTO SANITÁRIO - RODOVIA PR281 - KM 50,800"},{"id":93,"processo":"2024/752024","solicitacao":"752024","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Última movimentação em 2025. Protocolo repassado para o Marrão","abertura":"","rodovia":"PR092","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR092 - KM 26,250 AO 26,366"},{"id":94,"processo":"2024/882024","solicitacao":"882024","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Projeto entregue no DER em 2026 e aguardando correções","abertura":"","rodovia":"PR092","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR092 - KM 77,990"},{"id":95,"processo":"2024/1512024","solicitacao":"1512024","tipo":"","requerente":"","situacao":"Ag. entrega das correções solicitadas no projeto","prazo":"","obs":"Gabriel reiterou que devem ser feitas correções no projeto em 2025","abertura":"","rodovia":"PR412","ocupacao":"ACESSO COMERCIAL - RODOVIA PR412 - KM 50,000"},{"id":96,"processo":"2024/1522024","solicitacao":"1522024","tipo":"","requerente":"","situacao":"Ag. registro de inventário ambiental","prazo":"","obs":"Murilo solicitou mais uma cópia para correção do projeto em 2025","abertura":"","rodovia":"PR419","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR419 - KM 9,222"},{"id":97,"processo":"2024/1912024","solicitacao":"1912024","tipo":"","requerente":"","situacao":"Ag. Vistoria Final","prazo":"","obs":"Projetos aguardando análise","abertura":"","rodovia":"PR506","ocupacao":"ACESSO PRIVATIVO - RODOVIA PR506 - KM 19,720"},{"id":98,"processo":"2024/2002024","solicitacao":"2002024","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Gabriel solicitou que o requerente retire os projetos corrigidos no DER para início das obras em 2025","abertura":"","rodovia":"PR510","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR510 - KM 78,948"},{"id":99,"processo":"2024/2012024","solicitacao":"2012024","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Gabriel solicitou que o requerente retire os projetos corrigidos no DER para início das obras em 2025","abertura":"","rodovia":"PR090","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR090 - KM 23,597"},{"id":100,"processo":"2024/2022024","solicitacao":"2022024","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Gabriel solicitou que o requerente retire os projetos corrigidos no DER para início das obras em 2025","abertura":"","rodovia":"PR092","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR092 - KM 16,066"},{"id":101,"processo":"2024/2032024","solicitacao":"2032024","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Gabriel solicitou As Built em 2026 devido à obra no local estar diferente da solicitação","abertura":"","rodovia":"PR509","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR509 - KM 29,058"},{"id":102,"processo":"2024/2042024","solicitacao":"2042024","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Maycon encaminhou o processo para Cristiane para análise em 2025.","abertura":"","rodovia":"PR417","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR417 - KM 6,785"},{"id":103,"processo":"2024/2072024","solicitacao":"2072024","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Gabriel solicitou As Built em 2026 devido à obra no local estar diferente da solicitação","abertura":"","rodovia":"PR506","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR506 - KM 4,889"},{"id":104,"processo":"2024/3022024","solicitacao":"3022024","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Marcos pediu para Cristiane analisar o processo em 2025 via protocolo.","abertura":"","rodovia":"PR281","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR281 - KM 44,290"},{"id":105,"processo":"2024/3342024","solicitacao":"3342024","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Projeto entregue no DER em 2026 e aguardando correções","abertura":"","rodovia":"PR510","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR510 - KM 55,842"},{"id":106,"processo":"2024/4652024","solicitacao":"4652024","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Projetos foram enviados para análise em 2025. Marcos encaminhou o processo para o João em 2026","abertura":"","rodovia":"PR340","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR340 - KM 100,080 AO 129,660"},{"id":107,"processo":"2024/5612024","solicitacao":"5612024","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Murilo solicitou vias do projeto em 2025. Gabriel pediu informações via protocolo em 2026.","abertura":"","rodovia":"PR281","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR281 - KM 48,102 AO 48,261"},{"id":108,"processo":"2024/5692024","solicitacao":"5692024","tipo":"","requerente":"","situacao":"Ag. pagamento vistoria","prazo":"","obs":"Processo sem movimentação","abertura":"","rodovia":"PR415","ocupacao":"PAINÉIS DE PROPAGANDA - RODOVIA PR415 - KM 9,054"},{"id":109,"processo":"2024/5772024","solicitacao":"5772024","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Marcos pediu para Cristiane analisar o processo em 2025 via protocolo.","abertura":"","rodovia":"PR281","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR281 - KM 8,793 AO 8,893"},{"id":110,"processo":"2024/5782024","solicitacao":"5782024","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Marcos pediu para Cristiane analisar o processo em 2025 via protocolo.","abertura":"","rodovia":"PR281","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR281 - KM 10,221"},{"id":111,"processo":"2024/5922024","solicitacao":"5922024","tipo":"","requerente":"","situacao":"Ag. elaboração do Termo de Responsabilidade","prazo":"","obs":"Solicitado vias do projeto em 2025","abertura":"","rodovia":"PR419","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR419 - KM 12,135 AO 14,323"},{"id":112,"processo":"2024/6062024","solicitacao":"6062024","tipo":"","requerente":"","situacao":"Ag. pagamento vistoria","prazo":"","obs":"Cristiane enviou email afirmando que a solicitação será arquivada devido a nova requisição de faixa feita pelo interessado.","abertura":"","rodovia":"PR506","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR506 - KM 21,814"},{"id":113,"processo":"2024/6462024","solicitacao":"6462024","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Marcos pediu para Cristiane analisar o processo em 2025 via protocolo","abertura":"","rodovia":"PR281","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR281 - KM 9,003 AO 9,011"},{"id":114,"processo":"2024/6502024","solicitacao":"6502024","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"Cristiane solicitou atualizações em 2025","abertura":"","rodovia":"PR417","ocupacao":"ACESSO PRIVATIVO - RODOVIA PR417 - KM 3,980"},{"id":115,"processo":"2024/7102024","solicitacao":"7102024","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"SEM INFORMAÇÕES NO SIDER","abertura":"","rodovia":"PR412","ocupacao":"GALERIA DE ÁGUAS PLUVIAIS - RODOVIA PR412 - KM 31,492 AO 34,100"},{"id":116,"processo":"2024/7172024","solicitacao":"7172024","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"SEM INFORMAÇÕES NO SIDER","abertura":"","rodovia":"PR412","ocupacao":"GALERIA DE ÁGUAS PLUVIAIS - RODOVIA PR412 - KM 31,800 AO 31,900"},{"id":117,"processo":"2024/7182024","solicitacao":"7182024","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"SEM INFORMAÇÕES NO SIDER","abertura":"","rodovia":"PR412","ocupacao":"GALERIA DE ÁGUAS PLUVIAIS - RODOVIA PR412 - KM 32,550 AO 32,650"},{"id":118,"processo":"2024/7192024","solicitacao":"7192024","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"Gabriel solicitou informações em 2026","abertura":"","rodovia":"PR412","ocupacao":"GALERIA DE ÁGUAS PLUVIAIS - RODOVIA PR412 - KM 32,895"},{"id":119,"processo":"2024/7202024","solicitacao":"7202024","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"Gabriel solicitou informações em 2026","abertura":"","rodovia":"PR412","ocupacao":"GALERIA DE ÁGUAS PLUVIAIS - RODOVIA PR412 - KM 33,305"},{"id":120,"processo":"2024/7212024","solicitacao":"7212024","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"Gabriel solicitou informações em 2026","abertura":"","rodovia":"PR412","ocupacao":"GALERIA DE ÁGUAS PLUVIAIS - RODOVIA PR412 - KM 33,845"},{"id":121,"processo":"2024/7222024","solicitacao":"7222024","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"Gabriel solicitou informações em 2026","abertura":"","rodovia":"PR412","ocupacao":"GALERIA DE ÁGUAS PLUVIAIS - RODOVIA PR412 - KM 32,150"},{"id":122,"processo":"2024/7232024","solicitacao":"7232024","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"Gabriel solicitou informações em 2026","abertura":"","rodovia":"PR412","ocupacao":"GALERIA DE ÁGUAS PLUVIAIS - RODOVIA PR412 - KM 32,475"},{"id":123,"processo":"2024/7332024","solicitacao":"7332024","tipo":"","requerente":"","situacao":"Ag. análise do projeto","prazo":"","obs":"SEM INFORMAÇÕES NO SIDER","abertura":"","rodovia":"PR412","ocupacao":"GALERIA DE ÁGUAS PLUVIAIS - RODOVIA PR412 - KM 34,400"},{"id":124,"processo":"2024/7392024","solicitacao":"7392024","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Projeto na carga do Gabriel","abertura":"","rodovia":"PR417","ocupacao":"ADUTORA - RODOVIA PR417 - KM 11,200"},{"id":125,"processo":"2024/7462024","solicitacao":"7462024","tipo":"","requerente":"","situacao":"Ag. entrega das correções solicitadas no projeto","prazo":"","obs":"Murilo pediu correções no projeto em 2025.","abertura":"","rodovia":"PR415","ocupacao":"ACESSO PRIVATIVO - RODOVIA PR415 - KM 6,660"},{"id":126,"processo":"2024/7712024","solicitacao":"7712024","tipo":"","requerente":"","situacao":"Ag. Vistoria Final","prazo":"","obs":"Cristiane solicitou entrega das vias do projeto","abertura":"","rodovia":"PR510","ocupacao":"ACESSO COMERCIAL - RODOVIA PR510 - KM 73,038"},{"id":127,"processo":"2025/662025","solicitacao":"662025","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Cristiane pediu que as vias sejam assinadas pelo responsável","abertura":"","rodovia":"PR092","ocupacao":"ABRIGO DE ÔNIBUS - RODOVIA PR092 - KM 7,982"},{"id":128,"processo":"2025/862025","solicitacao":"862025","tipo":"","requerente":"","situacao":"Ag. entrega das correções solicitadas no projeto","prazo":"","obs":"Gabriel pediu correções no projeto em 2025","abertura":"","rodovia":"PR412","ocupacao":"ACESSO COMERCIAL - RODOVIA PR412 - KM 27,512"},{"id":129,"processo":"2025/1192025","solicitacao":"1192025","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Gabriel pediu vias do projeto para correção","abertura":"","rodovia":"PR412","ocupacao":"GALERIA DE ÁGUAS PLUVIAIS - RODOVIA PR412 - KM 32,130"},{"id":130,"processo":"2025/1232025","solicitacao":"1232025","tipo":"","requerente":"","situacao":"Ag. entrega das correções solicitadas no projeto","prazo":"","obs":"Cristiane pediu apresentação das outras disciplinas em 2026","abertura":"","rodovia":"PR415","ocupacao":"ACESSO PRIVATIVO - RODOVIA PR415 - KM 13,100"},{"id":131,"processo":"2025/1352025","solicitacao":"1352025","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Gabriel solicitou informações via protocolo em 2026","abertura":"","rodovia":"PR419","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR419 - KM 4,284"},{"id":132,"processo":"2025/1372025","solicitacao":"1372025","tipo":"","requerente":"","situacao":"Ag. Vistoria Inicial","prazo":"","obs":"Rodovia em obras. Projeto geométrico da rodovia foi enviado ao interessado para compatibilização.","abertura":"","rodovia":"PR092","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR092 - KM 15,080 AO 21,459"},{"id":133,"processo":"2025/1842025","solicitacao":"1842025","tipo":"","requerente":"","situacao":"Ag. elaboração do Termo de Responsabilidade","prazo":"","obs":"Projeto corrigido enviado para análise na S.R. Leste","abertura":"","rodovia":"PR419","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR419 - KM 7,213"},{"id":134,"processo":"2025/1962025","solicitacao":"1962025","tipo":"","requerente":"","situacao":"Ag. entrega do projeto","prazo":"","obs":"Aguardando análise de projeto","abertura":"","rodovia":"PR510","ocupacao":"ADUTORA - RODOVIA PR510 - KM 48,000 AO 48,500"},{"id":135,"processo":"2025/2502025","solicitacao":"2502025","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Gabriel solicitou envio do projeto impresso","abertura":"","rodovia":"PR417","ocupacao":"ADUTORA - RODOVIA PR417 - KM 10,893 AO 11,061"},{"id":136,"processo":"2025/2722025","solicitacao":"2722025","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Rodovia em processo de duplicação. Entrar em contato com o gerente da área e/ou fiscal da obra.","abertura":"","rodovia":"PR412","ocupacao":"ACESSO PÚBLICO - RODOVIA PR412 - KM 18,221"},{"id":137,"processo":"2025/2772025","solicitacao":"2772025","tipo":"","requerente":"","situacao":"Ag. Vistoria Inicial","prazo":"","obs":"Projetos disponíveis no SIDER para correção. RODOVIA EM OBRAS.","abertura":"","rodovia":"PR412","ocupacao":"FIBRA ÓTICA - RODOVIA PR412 - KM 36,118"},{"id":138,"processo":"2025/3052025","solicitacao":"3052025","tipo":"","requerente":"","situacao":"Ag. registro de inventário ambiental","prazo":"","obs":"Cristiane pediu o envio dos demais projetos","abertura":"","rodovia":"PR412","ocupacao":"ACESSO PRIVATIVO - RODOVIA PR417 - KM 0,475"},{"id":139,"processo":"2025/3102025","solicitacao":"3102025","tipo":"","requerente":"","situacao":"Ag. Vistoria Inicial","prazo":"","obs":"Gabriel indicou correções a serem feitas no projeto no dia 05/03/2026.","abertura":"","rodovia":"PR417","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR415 - KM 6,290 AO 6,865"},{"id":140,"processo":"2025/3112025","solicitacao":"3112025","tipo":"","requerente":"","situacao":"Ag. Vistoria Inicial","prazo":"","obs":"Gabriel indicou correções a serem feitas no projeto no dia 11/03/2026.","abertura":"","rodovia":"PR090","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR090 - KM 16,620"},{"id":141,"processo":"2025/3332025","solicitacao":"3332025","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Projeto aprovado e sob responsabilidade do engenheiro da área","abertura":"","rodovia":"PR281","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR281 - KM 31,323 AO 31,402"},{"id":142,"processo":"2025/3362025","solicitacao":"3362025","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Rodovia em processo de duplicação. Entrar em contato com o gerente da área e/ou fiscal da obra.","abertura":"","rodovia":"PR412","ocupacao":"ACESSO COMERCIAL - RODOVIA PR412 - KM 17,619"},{"id":143,"processo":"2025/3432025","solicitacao":"3432025","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Rodovia em processo de duplicação. Entrar em contato com o gerente da área e/ou fiscal da obra.","abertura":"","rodovia":"PR412","ocupacao":"ACESSO COMERCIAL - RODOVIA PR412 - KM 5,759"},{"id":144,"processo":"2025/3502025","solicitacao":"3502025","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Gabriel solicitou vias do projeto para aprovação em campo","abertura":"","rodovia":"PR506","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR506 - KM 28,334 AO 28,867"},{"id":145,"processo":"2025/3692025","solicitacao":"3692025","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Rodovia em processo de duplicação. Entrar em contato com o gerente da área e/ou fiscal da obra.","abertura":"","rodovia":"PR412","ocupacao":"ENGENHOS DE PUBLICIDADE ILUMINADOS - B - RODOVIA PR412 - KM 24,409"},{"id":146,"processo":"2025/4012025","solicitacao":"4012025","tipo":"","requerente":"","situacao":"Ag. Vistoria Inicial","prazo":"","obs":"Cristiane deu parecer favorável à continuidade do processo","abertura":"","rodovia":"PR090","ocupacao":"ACESSO PÚBLICO - RODOVIA PR090 - KM 21,460"},{"id":147,"processo":"2025/4092025","solicitacao":"4092025","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Cristiane solicitou correções no projeto em 2025","abertura":"","rodovia":"PR412","ocupacao":"FIBRA ÓTICA - RODOVIA PR412 - KM 28,800"},{"id":148,"processo":"2025/5012025","solicitacao":"5012025","tipo":"","requerente":"","situacao":"Ag. Vistoria Inicial","prazo":"","obs":"Solicitação deferida e parada devido à obras na rodovia.","abertura":"","rodovia":"PR412","ocupacao":"ACESSO PÚBLICO - RODOVIA PR412 - KM 44,550"},{"id":149,"processo":"2025/5362025","solicitacao":"5362025","tipo":"","requerente":"","situacao":"Ag. elaboração do Termo de Responsabilidade","prazo":"","obs":"Gabriel solicitou envio de projetos e autorização ambiental","abertura":"","rodovia":"PR420","ocupacao":"ACESSO PRIVATIVO - RODOVIA PR420 - KM 1,220"},{"id":150,"processo":"2025/5402025","solicitacao":"5402025","tipo":"","requerente":"","situacao":"Ag. Vistoria Inicial","prazo":"","obs":"Solicitação deferida e parada devido à obras na rodovia.","abertura":"","rodovia":"PR092","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR092 - KM 82,410 AO 82,515"},{"id":151,"processo":"2025/5442025","solicitacao":"5442025","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Rodovia em processo de duplicação. Entrar em contato com o gerente da área e/ou fiscal da obra.","abertura":"","rodovia":"PR412","ocupacao":"ESGOTAMENTO SANITÁRIO - RODOVIA PR412 - KM 16,600 AO 16,800"},{"id":152,"processo":"2026/52026","solicitacao":"52026","tipo":"","requerente":"","situacao":"Ag. Implantação","prazo":"","obs":"Processo sem movimentações no SIDER. Registrada no GFD para fins de cadastro.","abertura":"","rodovia":"PR417","ocupacao":"TRAVESSIA ELEVADA PR-417"},{"id":153,"processo":"2026/142026","solicitacao":"142026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Rodovia em processo de duplicação. Entrar em contato com o gerente da área e/ou fiscal da obra.","abertura":"","rodovia":"PR412","ocupacao":"ACESSO COMERCIAL - RODOVIA PR412 - KM 4,000"},{"id":154,"processo":"2026/282026","solicitacao":"282026","tipo":"","requerente":"","situacao":"Ag. Envio de documentação","prazo":"","obs":"Gabriel solicitou envio dos projetos complementares","abertura":"","rodovia":"PR417","ocupacao":"ACESSO COMERCIAL - RODOVIA PR417 - KM 9,090"},{"id":155,"processo":"2026/372026","solicitacao":"372026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Rodovia em processo de duplicação. Entrar em contato com o gerente da área e/ou fiscal da obra.","abertura":"","rodovia":"PR412","ocupacao":"PROJETO DE URBANIZAÇÃO - RODOVIA PR412 - KM 50,000"},{"id":156,"processo":"2026/412026","solicitacao":"412026","tipo":"","requerente":"","situacao":"Ag. registro de inventário ambiental","prazo":"","obs":"Projeto de acesso aguardando avaliação","abertura":"","rodovia":"PR506","ocupacao":"ACESSO PRIVATIVO - RODOVIA PR506 - KM 24,834"},{"id":157,"processo":"2026/482026","solicitacao":"482026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Implantação de monumento no Quiosque Mãe Catira. Entrar em contato com o gerente da área.","abertura":"","rodovia":"PR410","ocupacao":"OBRAS DE ARTE - RODOVIA PR410 - KM 15,800 AO 15,850"},{"id":158,"processo":"2026/802026","solicitacao":"802026","tipo":"","requerente":"","situacao":"Ag. Lançamento Tributário","prazo":"","obs":"Processo parado na carga do Gabriel","abertura":"","rodovia":"PR092","ocupacao":"OBRAS DE ARTE - RODOVIA PR092 - KM 9,750"},{"id":159,"processo":"2026/902026","solicitacao":"902026","tipo":"","requerente":"","situacao":"Ag. Vistoria Inicial","prazo":"","obs":"Solicitação deferida e parada na carga do Gabriel. RODOVIA ENTRARÁ EM OBRAS.","abertura":"","rodovia":"PR412","ocupacao":"ACESSO PRIVATIVO - RODOVIA PR412 - KM 6,850"},{"id":160,"processo":"2026/962026","solicitacao":"962026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Implantação de trevo. Entrar em contato com o gerente da área.","abertura":"","rodovia":"PR281","ocupacao":"ACESSO PÚBLICO - RODOVIA PR281 - KM 35,250"},{"id":161,"processo":"2026/1042026","solicitacao":"1042026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Implantação de manilhas para acessar o terreno. Entrar em contato com o gerente da área.","abertura":"","rodovia":"PR410","ocupacao":"ACESSO FAMILIAR - RODOVIA PR410 - KM 2,000"},{"id":162,"processo":"2026/1102026","solicitacao":"1102026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Implantação de passeio. Próximo ao ferry boat e PR-412 (em obras).","abertura":"","rodovia":"PR807","ocupacao":"PASSEIO PARA PEDESTRE - RODOVIA PR807 - KM 0,030 AO 0,068"},{"id":163,"processo":"2026/1432026","solicitacao":"1432026","tipo":"","requerente":"","situacao":"Ag. Vistoria Inicial","prazo":"","obs":"Solicitação deferida e parada na carga da Cristiane para vistoria.","abertura":"","rodovia":"PR090","ocupacao":"PAINÉIS SIMPLES (OUTDOOR) - MODALIDADE A - RODOVIA PR090 - KM 18,800"},{"id":164,"processo":"2026/1582026","solicitacao":"1582026","tipo":"","requerente":"","situacao":"Ag. Vistoria Inicial","prazo":"","obs":"Solicitação deferida e parada na carga do Gabriel.","abertura":"","rodovia":"PR281","ocupacao":"ACESSO PÚBLICO - RODOVIA PR281 - KM 6,000"},{"id":165,"processo":"2026/1592026","solicitacao":"1592026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Execução de faixa de travessia subterrânea para esgoto","abertura":"","rodovia":"PR506","ocupacao":"ESGOTAMENTO SANITÁRIO - RODOVIA PR506 - KM 26,702"},{"id":166,"processo":"2026/1602026","solicitacao":"1602026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Execução de faixa de paralelismo subterrânea para esgoto","abertura":"","rodovia":"PR506","ocupacao":"ESGOTAMENTO SANITÁRIO - RODOVIA PR506 - KM 26,320 AO 27,106"},{"id":167,"processo":"2026/1612026","solicitacao":"1612026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Rodovia em processo de duplicação.","abertura":"","rodovia":"PR092","ocupacao":"ADUTORA - RODOVIA PR092 - KM 28,705"},{"id":168,"processo":"2026/1622026","solicitacao":"1622026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Rodovia em processo de duplicação.","abertura":"","rodovia":"PR092","ocupacao":"ADUTORA - RODOVIA PR092 - KM 27,344 AO 28,690"},{"id":169,"processo":"2026/1772026","solicitacao":"1772026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Implantação de acesso para empreendimento industrial","abertura":"","rodovia":"PR405","ocupacao":"ACESSO PÚBLICO - RODOVIA PR405 - KM 31,768"},{"id":170,"processo":"2026/1782026","solicitacao":"1782026","tipo":"","requerente":"","situacao":"Ag. Vistoria Inicial","prazo":"","obs":"João vai fazer a vistoria","abertura":"","rodovia":"PR412","ocupacao":"GALERIA DE ÁGUAS PLUVIAIS - RODOVIA PR412 - KM 63,563"},{"id":171,"processo":"2026/1802026","solicitacao":"1802026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Rodovia em processo de duplicação.","abertura":"","rodovia":"PR092","ocupacao":"ACESSO COMERCIAL - RODOVIA PR092 - KM 14,400"},{"id":172,"processo":"2026/2012026","solicitacao":"2012026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Rodovia em processo de duplicação.","abertura":"","rodovia":"PR092","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR092 - KM 18,908 AO 19,015"},{"id":173,"processo":"2026/2072026","solicitacao":"2072026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Rodovia em processo de duplicação.","abertura":"","rodovia":"PR506","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR506 - KM 21,784 AO 22,462"},{"id":174,"processo":"2026/2232026","solicitacao":"2232026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Rodovia em processo de duplicação.","abertura":"","rodovia":"PR412","ocupacao":"REDE DE ENERGIA ELETRICA - RODOVIA PR412 - KM 40,083 AO 40,431"},{"id":175,"processo":"2026/2252026","solicitacao":"2252026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Acesso comercial para entrada e saída de veículos até 15m","abertura":"","rodovia":"PR417","ocupacao":"ACESSO COMERCIAL - RODOVIA PR417 - KM 5,852"},{"id":176,"processo":"2026/2262026","solicitacao":"2262026","tipo":"","requerente":"","situacao":"Ag. Pagamento da vistoria","prazo":"","obs":"","abertura":"","rodovia":"PR419","ocupacao":"ACESSO COMERCIAL - RODOVIA PR419 - KM 1,600"},{"id":177,"processo":"2026/2312026","solicitacao":"2312026","tipo":"","requerente":"","situacao":"Ag. Pagamento da vistoria","prazo":"","obs":"","abertura":"","rodovia":"PR281","ocupacao":"ACESSO COMERCIAL - RODOVIA PR281 - KM 20,305"},{"id":178,"processo":"2026/2352026","solicitacao":"2352026","tipo":"","requerente":"","situacao":"Ag. Pagamento da vistoria","prazo":"","obs":"","abertura":"","rodovia":"PR092","ocupacao":"ACESSO PRIVATIVO - RODOVIA PR092 - KM 6,721"},{"id":179,"processo":"2026/2422026","solicitacao":"2422026","tipo":"","requerente":"","situacao":"Ag. Avaliação","prazo":"","obs":"Rodovia em processo de duplicação.","abertura":"","rodovia":"PR412","ocupacao":"ACESSO FAMILIAR - RODOVIA PR412 - KM 15,772"}];
+let nextId = 180;
+
+// ─── UTILS ──────────────────────────────────────────────
+function prazoStatus(prazoStr, sit){
+  if(['Concluido','Solicitação negada'].includes(sit)) return 'ok';
+  if(!prazoStr) return 'ok';
+  const p = new Date(prazoStr+'T00:00:00');
+  const diff = (p - hoje)/86400000;
+  if(diff < 0) return 'vencido';
+  if(diff <= PRAZO_AVISO_DIAS) return 'proximo';
+  return 'ok';
+}
+
+function getBadgeClass(s){
+  const m = {
+    'Ag. Avaliação':                              'badge-analise',
+    'Ag. Conclusão':                              'badge-pendente',
+    'Ag. Envio de documentação':                  'badge-analise',
+    'Ag. Implantação':                            'badge-pendente',
+    'Ag. Lançamento Tributário':                  'badge-pendente',
+    'Ag. Pagamento da vistoria':                  'badge-pendente',
+    'Ag. Vistoria Final':                         'badge-analise',
+    'Ag. Vistoria Inicial':                       'badge-analise',
+    'Ag. análise do projeto':                     'badge-analise',
+    'Ag. elaboração do Termo de Responsabilidade':'badge-pendente',
+    'Ag. encerramento da solicitação':            'badge-pendente',
+    'Ag. entrega das correções solicitadas no projeto':'badge-pendente',
+    'Ag. entrega do projeto':                     'badge-analise',
+    'Ag. pagamento vistoria':                     'badge-pendente',
+    'Ag. registro de inventário ambiental':       'badge-analise',
+    'Em implantação':                             'badge-aprovado',
+    'Concluido':                                  'badge-concluido',
+    'Solicitação negada':                         'badge-indeferido',
+  };
+  return m[s]||'badge-concluido';
+}
+
+// ─── CHARTS ─────────────────────────────────────────────
+const PALETTE = {
+  'Ag. Vistoria Inicial':    '#1a4a7a',
+  'Ag. Vistoria Final':      '#185fa5',
+  'Ag. Implantação':         '#9a6400',
+  'Concluido':               '#1d6b3a',
+  'Solicitação negada':      '#b83232',
+  'Ag. Pagamento Vistoria':  '#7a3a1a',
+  'Ag. Assinatura do Termo': '#4a1a7a',
+  'Ag. Projeto':             '#1a6b6b',
+  'Ag. Correções do Projeto':'#8b5e00',
+  'Ag. Documentação':        '#6b6560',
+};
+
+let charts = {};
+
+function destroyChart(id){ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }
+
+function buildCharts(){
+  // 1. Situação donut
+  destroyChart('situacao');
+  const contSit = {};
+  SITUACOES.forEach(s => contSit[s] = 0);
+  dados.forEach(d => { if(contSit[d.situacao]!==undefined) contSit[d.situacao]++; });
+  const ctx1 = document.getElementById('chartSituacao').getContext('2d');
+  charts.situacao = new Chart(ctx1, {
+    type: 'doughnut',
+    data: {
+      labels: SITUACOES,
+      datasets: [{ data: SITUACOES.map(s=>contSit[s]), backgroundColor: SITUACOES.map(s=>PALETTE[s]), borderWidth: 2, borderColor: '#faf9f7', hoverOffset: 6 }]
+    },
+    options: { cutout: '68%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed}` } } }, animation: { animateScale: true } }
+  });
+  // Legend
+  const leg = document.getElementById('legendSituacao');
+  leg.innerHTML = SITUACOES.map(s => `<div class="legend-item"><div class="legend-dot" style="background:${PALETTE[s]}"></div><span style="color:var(--text2)">${s}</span><span style="margin-left:auto; font-family:'DM Mono',monospace; font-size:13px; font-weight:500; color:var(--text)">${contSit[s]}</span></div>`).join('');
+
+  // 2. Prazos bar
+  destroyChart('prazos');
+  let vencidos=0, proximos=0, ok=0;
+  dados.forEach(d => {
+    const ps = prazoStatus(d.prazo, d.situacao);
+    if(ps==='vencido') vencidos++;
+    else if(ps==='proximo') proximos++;
+    else ok++;
+  });
+  const ctx2 = document.getElementById('chartPrazos').getContext('2d');
+  charts.prazos = new Chart(ctx2, {
+    type: 'bar',
+    data: {
+      labels: ['Vencidos','A vencer (≤5 dias)','Em dia'],
+      datasets: [{ data: [vencidos, proximos, ok], backgroundColor: ['#b83232','#9a6400','#1d6b3a'], borderRadius: 6, borderSkipped: false }]
+    },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { grid: { color: '#e2ddd6' }, ticks: { stepSize: 1 } }, y: { grid: { display: false } } }, animation: { duration: 800 } }
+  });
+
+  // 3. Evolução mensal
+  destroyChart('mensal');
+  const labMes = meses.map(m => m.toLocaleDateString('pt-BR',{month:'short',year:'2-digit'}));
+  const countMes = meses.map(m => dados.filter(d => {
+    if(!d.abertura) return false;
+    const a = new Date(d.abertura+'T00:00:00');
+    return a.getFullYear()===m.getFullYear() && a.getMonth()===m.getMonth();
+  }).length);
+  const ctx3 = document.getElementById('chartMensal').getContext('2d');
+  charts.mensal = new Chart(ctx3, {
+    type: 'line',
+    data: {
+      labels: labMes,
+      datasets: [{
+        label: 'Solicitações', data: countMes,
+        borderColor: '#1d4e3a', backgroundColor: 'rgba(29,78,58,0.08)',
+        borderWidth: 2, pointBackgroundColor: '#1d4e3a', pointRadius: 4, pointHoverRadius: 6,
+        tension: 0.35, fill: true
+      }]
+    },
+    options: { plugins: { legend: { display: false } }, scales: { x: { grid: { color: '#e2ddd6' } }, y: { grid: { color: '#e2ddd6' }, ticks: { stepSize: 1 } } }, animation: { duration: 1000 } }
+  });
+
+  // Relatórios
+  buildReportCharts();
+}
+
+function buildReportCharts(){
+  // Tipo
+  destroyChart('tipo');
+  const contTipo = {};
+  TIPOS.forEach(t=>contTipo[t]=0);
+  dados.forEach(d=>{ if(contTipo[d.tipo]!==undefined) contTipo[d.tipo]++; });
+  const cores = ['#1a4a7a','#1d6b3a','#9a6400','#b83232','#1d4e3a','#6b6560'];
+  const ctx4 = document.getElementById('chartTipo');
+  if(ctx4){
+    destroyChart('tipo');
+    charts.tipo = new Chart(ctx4.getContext('2d'), {
+      type: 'bar',
+      data: { labels: TIPOS, datasets: [{ data: TIPOS.map(t=>contTipo[t]), backgroundColor: cores, borderRadius: 6, borderSkipped: false }] },
+      options: { plugins:{ legend:{display:false} }, scales:{ x:{grid:{display:false},ticks:{font:{size:11}}}, y:{grid:{color:'#e2ddd6'},ticks:{stepSize:1}} } }
+    });
+  }
+  // Aprovação
+  const ctx5 = document.getElementById('chartAprov');
+  if(ctx5){
+    destroyChart('aprov');
+    const aprov = dados.filter(d=>d.situacao==='Concluido').length;
+    const indf  = dados.filter(d=>d.situacao==='Solicitação negada').length;
+    const outros= dados.length - aprov - indf;
+    charts.aprov = new Chart(ctx5.getContext('2d'), {
+      type: 'doughnut',
+      data: { labels:['Concluidos','Negados','Em andamento'], datasets:[{ data:[aprov,indf,outros], backgroundColor:['#1d6b3a','#b83232','#9a6400'], borderWidth:2, borderColor:'#faf9f7' }] },
+      options: { cutout:'60%', plugins:{ legend:{ position:'bottom', labels:{ font:{size:12}, padding:16, color:'#6b6560' } } } }
+    });
+  }
+  // Tempo médio
+  const ctx6 = document.getElementById('chartTempo');
+  if(ctx6){
+    destroyChart('tempo');
+    charts.tempo = new Chart(ctx6.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: ['Ag. Vistoria','Ag. Projeto','Ag. Pagamento','Ag. Assinatura','Ag. Implantação'],
+        datasets: [{ label:'Dias médios', data:[12,25,18,10,30], backgroundColor: ['#1a4a7a','#1a6b6b','#7a3a1a','#4a1a7a','#9a6400'], borderRadius:6, borderSkipped:false }]
+      },
+      options: { plugins:{legend:{display:false}}, scales:{ x:{grid:{display:false}}, y:{grid:{color:'#e2ddd6'},title:{display:true,text:'Dias',color:'#9e9891',font:{size:11}}} } }
+    });
+  }
+}
+
+// ─── METRICS ────────────────────────────────────────────
+function buildMetrics(){
+  const total = dados.length;
+  const ativos = dados.filter(d=>!['Concluido','Solicitação negada'].includes(d.situacao)).length;
+  const vencidos = dados.filter(d=>prazoStatus(d.prazo,d.situacao)==='vencido').length;
+  const concluidos = dados.filter(d=>d.situacao==='Concluido').length;
+
+  document.getElementById('metricsGrid').innerHTML = `
+    <div class="metric-card accent">
+      <div class="label">Total de processos</div>
+      <div class="value">${total}</div>
+      <div class="sub">Todos os registros</div>
+      <div class="accent-bar" style="background:var(--accent)"></div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Em andamento</div>
+      <div class="value">${ativos}</div>
+      <div class="sub">Processos ativos</div>
+      <div class="accent-bar" style="background:var(--info)"></div>
+    </div>
+    <div class="metric-card danger">
+      <div class="label">Prazos vencidos</div>
+      <div class="value">${vencidos}</div>
+      <div class="sub">Requerem atenção</div>
+      <div class="accent-bar" style="background:var(--danger)"></div>
+    </div>
+    <div class="metric-card success">
+      <div class="label">Concluídos</div>
+      <div class="value">${concluidos}</div>
+      <div class="sub">${Math.round(concluidos/total*100)}% do total</div>
+      <div class="accent-bar" style="background:var(--success)"></div>
+    </div>
+  `;
+
+  // Alerts
+  const venc = dados.filter(d=>prazoStatus(d.prazo,d.situacao)==='vencido');
+  const prox = dados.filter(d=>prazoStatus(d.prazo,d.situacao)==='proximo');
+  let html = '';
+  if(venc.length) html += `<div class="alert-strip alert-danger"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> ${venc.length} processo${venc.length>1?'s':''} com prazo vencido — ação urgente necessária.</div>`;
+  if(prox.length) html += `<div class="alert-strip alert-warning"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ${prox.length} processo${prox.length>1?'s':''} vencem em até 5 dias.</div>`;
+  document.getElementById('alertsArea').innerHTML = html;
+}
+
+// ─── TABLE ──────────────────────────────────────────────
+function renderTable(){
+  const busca = document.getElementById('searchInput').value.toLowerCase();
+  const filtSit = document.getElementById('filterSit').value;
+  const filtPrazo = document.getElementById('filterPrazo').value;
+
+  let lista = dados.filter(d => {
+    const matchBusca = !busca || d.processo.toLowerCase().includes(busca) || d.solicitacao.toLowerCase().includes(busca) || (d.requerente||'').toLowerCase().includes(busca) || (d.rodovia||'').toLowerCase().includes(busca) || (d.ocupacao||'').toLowerCase().includes(busca);
+    const matchSit = !filtSit || d.situacao === filtSit;
+    const ps = prazoStatus(d.prazo, d.situacao);
+    const matchPrazo = !filtPrazo || ps === filtPrazo;
+    return matchBusca && matchSit && matchPrazo;
+  });
+
+  const tbody = document.getElementById('tableBody');
+  if(!lista.length){
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>Nenhum processo encontrado</p></div></td></tr>`;
+    document.getElementById('tableFooter').textContent = '0 registros';
+    return;
+  }
+
+  tbody.innerHTML = lista.map(d => {
+    const ps = prazoStatus(d.prazo, d.situacao);
+    const prazoHtml = !d.prazo ? '<span class="prazo-ok">—</span>'
+      : ps==='vencido' ? `<span class="prazo-late">⚠ ${fmtDate(d.prazo)}</span>`
+      : ps==='proximo' ? `<span class="prazo-warn">⏳ ${fmtDate(d.prazo)}</span>`
+      : `<span class="prazo-ok">${fmtDate(d.prazo)}</span>`;
+    return `<tr>
+      <td><span class="td-processo">${d.processo}</span></td>
+      <td><span class="td-solicitacao">${d.solicitacao}</span></td>
+      <td style="font-size:12px; font-weight:600; color:var(--accent)">${d.rodovia||'—'}${d.lat&&d.lng ? ` <a href="https://www.google.com/maps?q=${d.lat},${d.lng}" target="_blank" title="Ver no Google Maps" style="color:var(--info);text-decoration:none;font-size:11px;vertical-align:middle;">🗺</a>` : ''}</td>
+      <td style="font-size:12px; color:var(--text2); max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${(d.ocupacao||'').replace(/"/g,'&quot;')}">${d.ocupacao||'—'}</td>
+      <td><span class="badge ${getBadgeClass(d.situacao)}">${d.situacao}</span></td>
+      <td>${prazoHtml}</td>
+      <td><div class="actions">
+        <button class="action-btn edit" onclick="editRecord(${d.id})" title="Editar">
+          <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button class="action-btn del" onclick="deleteRecord(${d.id})" title="Excluir">
+          <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+        </button>
+      </div></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('tableFooter').textContent = `${lista.length} registro${lista.length!==1?'s':''} encontrado${lista.length!==1?'s':''}`;
+}
+
+// ─── MAPS ───────────────────────────────────────────────
+function atualizarPreviewMaps(){
+  const lat = document.getElementById('f_lat').value.trim();
+  const lng = document.getElementById('f_lng').value.trim();
+  const prev = document.getElementById('mapsPreview');
+  if(lat && lng && !isNaN(lat) && !isNaN(lng)){
+    const url = `https://www.google.com/maps?q=${lat},${lng}`;
+    document.getElementById('mapsLink').href = url;
+    document.getElementById('mapsCoordLabel').textContent = `${parseFloat(lat).toFixed(6)}, ${parseFloat(lng).toFixed(6)}`;
+    prev.style.display = 'flex';
+  } else {
+    prev.style.display = 'none';
+  }
+}
+
+// ─── MODAL ──────────────────────────────────────────────
+let editingId = null;
+
+function openModal(){
+  editingId = null;
+  document.getElementById('modalTitle').textContent = 'Novo processo';
+  ['f_processo','f_solicitacao','f_requerente','f_obs','f_rodovia','f_ocupacao'].forEach(id => document.getElementById(id).value='');
+  document.getElementById('f_lat').value = '';
+  document.getElementById('f_lng').value = '';
+  document.getElementById('mapsPreview').style.display = 'none';
+  document.getElementById('f_situacao').value = SITUACOES[0]||'Ag. Avaliação';
+  document.getElementById('f_tipo').value = TIPOS[0]||'';
+  document.getElementById('f_prazo').value = '';
+  syncCamposModal();
+  CAMPOS_EXTRAS.forEach(c=>{ const el=document.getElementById(c.id); if(el) el.value=''; });
+  document.getElementById('modalOverlay').classList.add('open');
+}
+
+function editRecord(id){
+  const d = dados.find(r=>r.id===id); if(!d) return;
+  editingId = id;
+  document.getElementById('modalTitle').textContent = 'Editar processo';
+  document.getElementById('f_processo').value = d.processo;
+  document.getElementById('f_solicitacao').value = d.solicitacao;
+  document.getElementById('f_tipo').value = d.tipo||TIPOS[0]||'';
+  document.getElementById('f_requerente').value = d.requerente||'';
+  document.getElementById('f_situacao').value = d.situacao;
+  document.getElementById('f_prazo').value = d.prazo||'';
+  document.getElementById('f_obs').value = d.obs||'';
+  document.getElementById('f_rodovia').value = d.rodovia||'';
+  document.getElementById('f_ocupacao').value = d.ocupacao||'';
+  document.getElementById('f_lat').value = d.lat||'';
+  document.getElementById('f_lng').value = d.lng||'';
+  atualizarPreviewMaps();
+  syncCamposModal();
+  CAMPOS_EXTRAS.forEach(c=>{ const el=document.getElementById(c.id); if(el) el.value=d[c.id]||''; });
+  document.getElementById('modalOverlay').classList.add('open');
+}
+
+function closeModal(){ document.getElementById('modalOverlay').classList.remove('open'); }
+function closeModalOutside(e){ if(e.target===document.getElementById('modalOverlay')) closeModal(); }
+
+async function saveRecord(){
+  const p = document.getElementById('f_processo').value.trim();
+  const s = document.getElementById('f_solicitacao').value.trim();
+  if(!p||!s){ alert('Preencha o número do processo e da solicitação.'); return; }
+  const rec = {
+    processo: p, solicitacao: s,
+    tipo: document.getElementById('f_tipo').value,
+    requerente: document.getElementById('f_requerente').value.trim(),
+    situacao: document.getElementById('f_situacao').value,
+    prazo: document.getElementById('f_prazo').value || null,
+    obs: document.getElementById('f_obs').value.trim(),
+    rodovia: document.getElementById('f_rodovia').value.trim(),
+    ocupacao: document.getElementById('f_ocupacao').value.trim(),
+    lat: document.getElementById('f_lat').value.trim() || null,
+    lng: document.getElementById('f_lng').value.trim() || null,
+  };
+  CAMPOS_EXTRAS.forEach(c=>{ const el=document.getElementById(c.id); if(el) rec[c.id]=el.value; });
+
+  if(editingId){
+    rec.id = editingId;
+    const ok = await salvarNoBanco(rec);
+    if(!ok) return;
+    const idx = dados.findIndex(d=>d.id===editingId);
+    dados[idx] = { ...dados[idx], ...rec };
+  } else {
+    rec.id = nextId++;
+    rec.abertura = toISO(hoje);
+    const ok = await salvarNoBanco(rec);
+    if(!ok) return;
+    dados.push(rec);
+  }
+  closeModal();
+  refresh();
+}
+
+async function deleteRecord(id){
+  if(!confirm('Deseja excluir este processo?')) return;
+  const ok = await excluirDoBanco(id);
+  if(!ok) return;
+  dados = dados.filter(d=>d.id!==id);
+  refresh();
+}
+
+// ─── ADMIN ──────────────────────────────────────────────
+function showToast(msg, tipo='ok'){
+  const t = document.getElementById('adminToast');
+  t.textContent = msg;
+  t.style.background = tipo==='err' ? 'var(--danger)' : 'var(--accent)';
+  t.style.display = 'block';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(()=>{ t.style.display='none'; }, 2800);
+}
+
+function renderAdmin(){
+  renderListaSituacoes();
+  renderListaTipos();
+  renderListaCampos();
+  document.getElementById('countSit').textContent = SITUACOES.length + ' itens';
+  document.getElementById('countTipo').textContent = TIPOS.length + ' itens';
+  document.getElementById('countCampos').textContent = CAMPOS_EXTRAS.length + ' itens';
+  document.getElementById('cfg_prazo').value = PRAZO_AVISO_DIAS;
+}
+
+function renderListaSituacoes(){
+  document.getElementById('listSituacoes').innerHTML = SITUACOES.map((s,i) => `
+    <div style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--surface2); border-radius:var(--radius); border:1px solid var(--border);">
+      <span style="font-size:13px; flex:1; color:var(--text);">${s}</span>
+      <button onclick="moverItem('sit',${i},-1)" title="Mover para cima" style="border:none;background:none;cursor:pointer;color:var(--text3);padding:2px 4px;" ${i===0?'disabled':''}>↑</button>
+      <button onclick="moverItem('sit',${i},1)" title="Mover para baixo" style="border:none;background:none;cursor:pointer;color:var(--text3);padding:2px 4px;" ${i===SITUACOES.length-1?'disabled':''}>↓</button>
+      <button onclick="editarItem('sit',${i})" title="Renomear" style="border:none;background:none;cursor:pointer;color:var(--info);padding:2px 6px;">✏</button>
+      <button onclick="removerSituacao(${i})" title="Remover" style="border:none;background:none;cursor:pointer;color:var(--danger);padding:2px 6px;">✕</button>
+    </div>`).join('');
+  document.getElementById('countSit').textContent = SITUACOES.length + ' itens';
+}
+
+function renderListaTipos(){
+  document.getElementById('listTipos').innerHTML = TIPOS.map((t,i) => `
+    <div style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--surface2); border-radius:var(--radius); border:1px solid var(--border);">
+      <span style="font-size:13px; flex:1; color:var(--text);">${t}</span>
+      <button onclick="moverItem('tipo',${i},-1)" style="border:none;background:none;cursor:pointer;color:var(--text3);padding:2px 4px;" ${i===0?'disabled':''}>↑</button>
+      <button onclick="moverItem('tipo',${i},1)" style="border:none;background:none;cursor:pointer;color:var(--text3);padding:2px 4px;" ${i===TIPOS.length-1?'disabled':''}>↓</button>
+      <button onclick="editarItem('tipo',${i})" style="border:none;background:none;cursor:pointer;color:var(--info);padding:2px 6px;">✏</button>
+      <button onclick="removerTipo(${i})" style="border:none;background:none;cursor:pointer;color:var(--danger);padding:2px 6px;">✕</button>
+    </div>`).join('');
+  document.getElementById('countTipo').textContent = TIPOS.length + ' itens';
+}
+
+function renderListaCampos(){
+  const tipoLabel = {text:'Texto', number:'Número', date:'Data', select:'Seleção'};
+  document.getElementById('listCampos').innerHTML = CAMPOS_EXTRAS.length === 0
+    ? `<div style="font-size:13px; color:var(--text3); text-align:center; padding:12px 0;">Nenhum campo adicional criado</div>`
+    : CAMPOS_EXTRAS.map((c,i) => `
+    <div style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--surface2); border-radius:var(--radius); border:1px solid var(--border);">
+      <span style="font-size:13px; flex:1; color:var(--text);">${c.label}</span>
+      <span style="font-size:11px; background:var(--warning-bg); color:var(--warning); padding:2px 8px; border-radius:12px;">${tipoLabel[c.tipo]||c.tipo}</span>
+      <button onclick="removerCampo(${i})" style="border:none;background:none;cursor:pointer;color:var(--danger);padding:2px 6px;">✕</button>
+    </div>`).join('');
+  document.getElementById('countCampos').textContent = CAMPOS_EXTRAS.length + ' itens';
+  syncCamposModal();
+}
+
+function addSituacao(){
+  const inp = document.getElementById('newSituacao');
+  const val = inp.value.trim();
+  if(!val) return;
+  if(SITUACOES.includes(val)){ showToast('Situação já existe!','err'); return; }
+  SITUACOES.push(val);
+  inp.value = '';
+  renderListaSituacoes();
+  syncSelectsSituacao();
+  showToast('Situação adicionada!');
+}
+
+function removerSituacao(i){
+  const sit = SITUACOES[i];
+  const usados = dados.filter(d=>d.situacao===sit).length;
+  if(usados > 0 && !confirm(`A situação "${sit}" está em uso por ${usados} processo(s). Deseja remover mesmo assim?`)) return;
+  SITUACOES.splice(i, 1);
+  renderListaSituacoes();
+  syncSelectsSituacao();
+  showToast('Situação removida!');
+}
+
+function addTipo(){
+  const inp = document.getElementById('newTipo');
+  const val = inp.value.trim();
+  if(!val) return;
+  if(TIPOS.includes(val)){ showToast('Tipo já existe!','err'); return; }
+  TIPOS.push(val);
+  inp.value = '';
+  renderListaTipos();
+  syncSelectsTipo();
+  showToast('Tipo adicionado!');
+}
+
+function removerTipo(i){
+  TIPOS.splice(i, 1);
+  renderListaTipos();
+  syncSelectsTipo();
+  showToast('Tipo removido!');
+}
+
+function addCampo(){
+  const label = document.getElementById('newCampoLabel').value.trim();
+  const tipo = document.getElementById('newCampoTipo').value;
+  if(!label){ showToast('Informe o nome do campo','err'); return; }
+  if(CAMPOS_EXTRAS.find(c=>c.label===label)){ showToast('Campo já existe!','err'); return; }
+  const id = 'campo_' + label.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
+  CAMPOS_EXTRAS.push({ id, label, tipo });
+  document.getElementById('newCampoLabel').value = '';
+  renderListaCampos();
+  showToast('Campo adicionado ao formulário!');
+}
+
+function removerCampo(i){
+  CAMPOS_EXTRAS.splice(i, 1);
+  renderListaCampos();
+  showToast('Campo removido!');
+}
+
+function moverItem(lista, i, dir){
+  const arr = lista==='sit' ? SITUACOES : TIPOS;
+  const j = i + dir;
+  if(j < 0 || j >= arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  if(lista==='sit'){ renderListaSituacoes(); syncSelectsSituacao(); }
+  else { renderListaTipos(); syncSelectsTipo(); }
+}
+
+function editarItem(lista, i){
+  const arr = lista==='sit' ? SITUACOES : TIPOS;
+  const novo = prompt('Novo nome:', arr[i]);
+  if(!novo || novo.trim()===arr[i]) return;
+  const nomeNovo = novo.trim();
+  if(arr.includes(nomeNovo)){ showToast('Já existe um item com esse nome','err'); return; }
+  // Atualiza processos que usam o valor antigo
+  if(lista==='sit') dados.forEach(d=>{ if(d.situacao===arr[i]) d.situacao=nomeNovo; });
+  else dados.forEach(d=>{ if(d.tipo===arr[i]) d.tipo=nomeNovo; });
+  arr[i] = nomeNovo;
+  if(lista==='sit'){ renderListaSituacoes(); syncSelectsSituacao(); }
+  else { renderListaTipos(); syncSelectsTipo(); }
+  showToast('Renomeado com sucesso!');
+}
+
+function syncSelectsSituacao(){
+  const opts = SITUACOES.map(s=>`<option>${s}</option>`).join('');
+  // filtro da tabela
+  const fSit = document.getElementById('filterSit');
+  fSit.innerHTML = '<option value="">Todas situações</option>' + opts;
+  // modal
+  document.getElementById('f_situacao').innerHTML = opts;
+}
+
+function syncSelectsTipo(){
+  const opts = TIPOS.map(t=>`<option>${t}</option>`).join('');
+  document.getElementById('f_tipo').innerHTML = opts;
+}
+
+function syncCamposModal(){
+  const container = document.getElementById('camposExtrasModal');
+  if(!container) return;
+  container.innerHTML = CAMPOS_EXTRAS.map(c => `
+    <div class="form-group full">
+      <label>${c.label}</label>
+      ${c.tipo==='select'
+        ? `<select id="${c.id}" style="padding:9px 12px;border:1px solid var(--border2);border-radius:var(--radius);font-family:inherit;font-size:13px;color:var(--text);background:var(--surface);outline:none;"><option></option></select>`
+        : `<input id="${c.id}" type="${c.tipo}" style="padding:9px 12px;border:1px solid var(--border2);border-radius:var(--radius);font-family:inherit;font-size:13px;color:var(--text);background:var(--surface);outline:none;"/>`
+      }
+    </div>`).join('');
+}
+
+function salvarConfiguracoes(){
+  const nome = document.getElementById('cfg_nome').value.trim();
+  const prazo = parseInt(document.getElementById('cfg_prazo').value);
+  if(nome) {
+    document.querySelector('.sidebar-logo h1').textContent = nome;
+    document.title = nome;
+  }
+  if(prazo >= 1) PRAZO_AVISO_DIAS = prazo;
+  showToast('Configurações salvas!');
+  refresh();
+}
+
+function exportarDados(){
+  const payload = JSON.stringify({ dados, SITUACOES, TIPOS, CAMPOS_EXTRAS }, null, 2);
+  const blob = new Blob([payload], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'faixa_dominio_backup.json'; a.click();
+  URL.revokeObjectURL(url);
+  showToast('Arquivo exportado!');
+}
+
+function importarDados(event){
+  const file = event.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const obj = JSON.parse(e.target.result);
+      if(obj.dados) { dados = obj.dados; nextId = Math.max(...dados.map(d=>d.id), 0) + 1; }
+      if(obj.SITUACOES) { SITUACOES.length=0; obj.SITUACOES.forEach(s=>SITUACOES.push(s)); }
+      if(obj.TIPOS) { TIPOS.length=0; obj.TIPOS.forEach(t=>TIPOS.push(t)); }
+      if(obj.CAMPOS_EXTRAS) { CAMPOS_EXTRAS.length=0; obj.CAMPOS_EXTRAS.forEach(c=>CAMPOS_EXTRAS.push(c)); }
+      syncSelectsSituacao(); syncSelectsTipo();
+      refresh(); renderAdmin();
+      showToast('Dados importados com sucesso!');
+    } catch(err) { showToast('Arquivo inválido!','err'); }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+// ─── SUPABASE CONFIG ────────────────────────────────────
+let SUPABASE_URL = localStorage.getItem('gfd_sb_url') || '';
+let SUPABASE_KEY = localStorage.getItem('gfd_sb_key') || '';
+let sbClient = null;
+let dbConectado = false;
+
+function iniciarSupabase(){
+  if(!SUPABASE_URL || !SUPABASE_KEY) return false;
+  try {
+    sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    return true;
+  } catch(e){ return false; }
+}
+
+async function testarConexao(){
+  if(!iniciarSupabase()){ showToast('Preencha URL e chave antes de testar.','err'); return; }
+  atualizarStatusConexao('testando');
+  try {
+    const { error } = await sbClient.from('processos').select('id').limit(1);
+    if(error) throw error;
+    dbConectado = true;
+    localStorage.setItem('gfd_sb_url', SUPABASE_URL);
+    localStorage.setItem('gfd_sb_key', SUPABASE_KEY);
+    atualizarStatusConexao('ok');
+    showToast('Conectado ao Supabase!');
+    await carregarDoBanco();
+  } catch(e){
+    dbConectado = false;
+    atualizarStatusConexao('erro');
+    showToast('Erro de conexão: ' + (e.message||e), 'err');
+  }
+}
+
+function atualizarStatusConexao(estado){
+  const el = document.getElementById('statusConexao');
+  if(!el) return;
+  const cfg = {
+    'testando': { cor:'var(--warning)', txt:'Testando conexão...' },
+    'ok':       { cor:'var(--success)', txt:'✓ Conectado ao banco de dados' },
+    'erro':     { cor:'var(--danger)',  txt:'✗ Falha na conexão' },
+    'offline':  { cor:'var(--text3)',   txt:'Não configurado — dados apenas na memória' },
+  };
+  const c = cfg[estado] || cfg.offline;
+  el.style.color = c.cor;
+  el.textContent = c.txt;
+}
+
+async function carregarDoBanco(){
+  if(!sbClient || !dbConectado) return;
+  try {
+    const { data, error } = await sbClient.from('processos').select('*').order('id');
+    if(error) throw error;
+    dados = data || [];
+    nextId = dados.length > 0 ? Math.max(...dados.map(d=>d.id)) + 1 : 1;
+    refresh();
+    showToast(`${dados.length} processos carregados do banco.`);
+  } catch(e){ showToast('Erro ao carregar dados: ' + e.message, 'err'); }
+}
+
+async function salvarNoBanco(registro){
+  if(!sbClient || !dbConectado) return true; // modo offline, já salvo na memória
+  try {
+    const { id, ...campos } = registro;
+    if(editingId){
+      const { error } = await sbClient.from('processos').update(campos).eq('id', id);
+      if(error) throw error;
+    } else {
+      const { error } = await sbClient.from('processos').insert([registro]);
+      if(error) throw error;
+    }
+    return true;
+  } catch(e){ showToast('Erro ao salvar: ' + e.message, 'err'); return false; }
+}
+
+async function excluirDoBanco(id){
+  if(!sbClient || !dbConectado) return true;
+  try {
+    const { error } = await sbClient.from('processos').delete().eq('id', id);
+    if(error) throw error;
+    return true;
+  } catch(e){ showToast('Erro ao excluir: ' + e.message, 'err'); return false; }
+}
+
+function copiarSQL(){
+  const txt = document.getElementById('sqlScript').textContent;
+  navigator.clipboard.writeText(txt).then(()=>showToast('SQL copiado!')).catch(()=>showToast('Não foi possível copiar.','err'));
+}
+
+async function migrarDadosParaBanco(){
+  if(!sbClient || !dbConectado){ showToast('Conecte ao banco primeiro.','err'); return; }
+  if(!confirm(`Isso enviará ${dados.length} processos ao Supabase. Continuar?`)) return;
+  showToast('Migrando dados...');
+  try {
+    // Limpa e insere em lotes de 50
+    await sbClient.from('processos').delete().neq('id', -1);
+    const lote = 50;
+    for(let i=0; i<dados.length; i+=lote){
+      const { error } = await sbClient.from('processos').insert(dados.slice(i, i+lote));
+      if(error) throw error;
+    }
+    showToast(`${dados.length} processos migrados com sucesso!`);
+  } catch(e){ showToast('Erro na migração: ' + e.message, 'err'); }
+}
+
+// ─── PAGES ──────────────────────────────────────────────
+const pageTitles = { dashboard:'Dashboard', processos:'Controle de processos', relatorios:'Relatórios', admin:'Administração' };
+
+function showPage(name){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById(`page-${name}`).classList.add('active');
+  document.querySelector(`.nav-item[onclick*="${name}"]`).classList.add('active');
+  document.getElementById('pageTitle').textContent = pageTitles[name];
+  if(name==='relatorios') setTimeout(buildReportCharts, 50);
+  if(name==='processos') renderTable();
+  if(name==='admin') renderAdmin();
+}
+
+function refresh(){
+  buildMetrics();
+  buildCharts();
+  renderTable();
+}
+
+// ─── INIT ───────────────────────────────────────────────
+document.getElementById('topbarDate').textContent = hoje.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+
+window.addEventListener('load', async () => {
+  refresh();
+  // Preencher campos de credenciais se já salvos
+  const urlEl = document.getElementById('sb_url');
+  const keyEl = document.getElementById('sb_key');
+  if(urlEl && SUPABASE_URL) urlEl.value = SUPABASE_URL;
+  if(keyEl && SUPABASE_KEY) keyEl.value = SUPABASE_KEY;
+  // Tentar reconectar automaticamente se credenciais existirem
+  if(SUPABASE_URL && SUPABASE_KEY){
+    atualizarStatusConexao('testando');
+    if(iniciarSupabase()){
+      try {
+        const { error } = await sbClient.from('processos').select('id').limit(1);
+        if(!error){
+          dbConectado = true;
+          atualizarStatusConexao('ok');
+          await carregarDoBanco();
+        } else { atualizarStatusConexao('erro'); }
+      } catch(e){ atualizarStatusConexao('erro'); }
+    }
+  } else {
+    atualizarStatusConexao('offline');
+  }
+});
+</script>
+</body>
+</html>
